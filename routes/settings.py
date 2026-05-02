@@ -6,6 +6,12 @@ import os
 
 settings_bp = Blueprint("settings", __name__)
 
+# ── GET /settings/ (PAGE LOAD) ─────────────────────────────
+@settings_bp.route("/", methods=["GET"])
+@login_required
+def settings_page():
+    return render_template("settings.html")
+
 
 # ── Helper: hash password ─────────────────────────────────────────────────────
 # MUST match auth.py exactly: sha256(SECRET_KEY + password)
