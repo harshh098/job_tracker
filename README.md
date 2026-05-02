@@ -109,5 +109,14 @@ Reminders
 POST /reminders/add
 GET /reminders/list
 
+---
 
+## 💡 Future Improvements
+
+- 🤖 Advanced AI job matching engine  
+- 📧 Email notifications for updates & reminders  
+- ☁️ Cloud deployment (AWS / Render)  
+- 👥 Multi-user support with role-based access  
+
+---
 
