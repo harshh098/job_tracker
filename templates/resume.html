@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Resume{% endblock %}
+{% block page_title %}Resume Parser{% endblock %}
+
+{% block content %}
+<div class="page-header fade-in">
+  <h1>Resume Intelligence</h1>
+  <p>Upload your resume to extract key information and skills automatically</p>
+</div>
+
+<div class="two-col">
+  <!-- Upload Section -->
+  <div>
+    <div class="card fade-in">
+      <div class="card-header">
+        <span class="card-title">📤 Upload Resume</span>
+      </div>
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+        <span class="upload-icon">📋</span>
+        <div class="upload-title">Drop your resume here</div>
+        <div class="upload-sub">or click to browse files</div>
+        <div class="upload-formats">
+          <span class="format-tag">PDF</span>
+          <span class="format-tag">DOCX</span>
+          <span class="format-tag">TXT</span>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".pdf,.docx,.txt" class="hidden" onchange="handleFileSelect(this)"/>
+
+      <div id="upload-status" class="mt-16 hidden">
+        <div class="flex items-center gap-8">
+          <div class="spinner" id="upload-spinner"></div>
+          <span style="font-size:13px;color:var(--text-muted)">Parsing resume…</span>
+        </div>
+      </div>
+
+      <div class="mt-16" id="selected-file" style="display:none;">
+        <div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;font-size:13px;display:flex;align-items:center;gap:10px;">
+          <span>📎</span>
+          <span id="selected-filename" style="color:var(--text-secondary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+          <button class="btn btn-primary btn-sm" onclick="uploadResume()">Parse ✨</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Past Resumes -->
+    <div class="card fade-in mt-16" style="animation-delay:0.1s">
+      <div class="card-header">
+        <span class="card-title">📚 Uploaded Resumes</span>
+        <!--
+          CHANGED: button now calls refreshResumes(this) which:
+            1. DELETEs all resumes via DELETE /resume/clear
+            2. Clears the resume list UI
+            3. Hides parsed data panel
+            4. Shows empty upload state
+            5. Resets selected file
+        -->
+        <button class="btn btn-ghost btn-sm" id="refresh-btn" onclick="refreshResumes(this)">↻ Refresh</button>
+      </div>
+      <div id="resume-list">
+        <div class="empty-state">
+          <div class="empty-state-icon">📭</div>
+          <div class="empty-state-text">No resumes uploaded yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Parsed Data -->
+  <div>
+    <div class="card fade-in" style="animation-delay:0.05s" id="parsed-card">
+      <div class="card-header">
+        <span class="card-title">✨ Parsed Information</span>
+        <span id="parse-filename" style="font-size:12px;color:var(--text-muted)"></span>
+      </div>
+
+      <div id="parse-placeholder">
+        <div class="empty-state">
+          <div class="empty-state-icon">🔍</div>
+          <div class="empty-state-text">Upload a resume to see parsed data</div>
+        </div>
+      </div>
+
+      <div id="parsed-content" class="hidden">
+        <!-- Contact Info -->
+        <div class="mb-20">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Contact Information</div>
+          <div class="info-row">
+            <span class="info-icon">👤</span>
+            <div><div class="info-label">Name</div><div class="info-value" id="p-name">—</div></div>
+          </div>
+          <div class="info-row">
+            <span class="info-icon">📧</span>
+            <div><div class="info-label">Email</div><div class="info-value" id="p-email">—</div></div>
+          </div>
+          <div class="info-row">
+            <span class="info-icon">📱</span>
+            <div><div class="info-label">Phone</div><div class="info-value" id="p-phone">—</div></div>
+          </div>
+        </div>
+
+        <!-- Skills -->
+        <div class="mb-20">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">
+            Skills Detected <span id="skills-count" style="color:var(--neon-purple);font-size:10px;"></span>
+          </div>
+          <div class="skills-container" id="p-skills"></div>
+        </div>
+
+        <!-- Experience -->
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Experience Highlights</div>
+          <div id="p-experience"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedFile = null;
+
+// Drag & Drop
+const zone = document.getElementById('upload-zone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+function handleFileSelect(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(file) {
+  selectedFile = file;
+  document.getElementById('selected-filename').textContent = file.name;
+  document.getElementById('selected-file').style.display = 'block';
+}
+
+async function uploadResume() {
+  if (!selectedFile) return;
+  const statusEl = document.getElementById('upload-status');
+  statusEl.classList.remove('hidden');
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/resume/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    showParsed(data.parsed, data.filename);
+    showToast('Resume parsed successfully!', 'success');
+    await loadResumes();
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    statusEl.classList.add('hidden');
+  }
+}
+
+function showParsed(p, filename) {
+  document.getElementById('parse-placeholder').classList.add('hidden');
+  document.getElementById('parsed-content').classList.remove('hidden');
+  document.getElementById('parse-filename').textContent = filename;
+  document.getElementById('p-name').textContent = p.name || '—';
+  document.getElementById('p-email').textContent = p.email || '—';
+  document.getElementById('p-phone').textContent = p.phone || '—';
+
+  // Skills
+  const skillsEl = document.getElementById('p-skills');
+  document.getElementById('skills-count').textContent = `(${p.skills.length})`;
+  if (p.skills.length) {
+    skillsEl.innerHTML = p.skills.map(s => `<span class="skill-tag">${s}</span>`).join('');
+  } else {
+    skillsEl.innerHTML = '<span style="color:var(--text-muted);font-size:13px">No skills detected</span>';
+  }
+
+  // Experience
+  const expEl = document.getElementById('p-experience');
+  if (p.experience.length) {
+    expEl.innerHTML = p.experience.map(e =>
+      `<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;line-height:1.5">${e}</div>`
+    ).join('');
+  } else {
+    expEl.innerHTML = '<span style="color:var(--text-muted);font-size:13px">No experience entries detected</span>';
+  }
+
+  // Save to session for AI page
+  sessionStorage.setItem('resume_skills', JSON.stringify(p.skills));
+  sessionStorage.setItem('resume_name', p.name);
+}
+
+// ── CHANGED: resetAll() ───────────────────────────────────────────
+// Resets the entire page to its initial empty state:
+//   1. Clears resume list UI
+//   2. Hides parsed data, shows placeholder
+//   3. Resets selected file + file input
+//   4. Clears sessionStorage keys set by showParsed()
+function resetAll() {
+  // 1. Resume list → empty state
+  document.getElementById('resume-list').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-state-icon">📭</div>
+      <div class="empty-state-text">No resumes uploaded yet</div>
+    </div>`;
+
+  // 2. Parsed panel → placeholder
+  document.getElementById('parsed-content').classList.add('hidden');
+  document.getElementById('parse-placeholder').classList.remove('hidden');
+  document.getElementById('parse-filename').textContent = '';
+
+  // 3. Selected file
+  selectedFile = null;
+  document.getElementById('selected-file').style.display = 'none';
+  document.getElementById('selected-filename').textContent = '';
+  document.getElementById('file-input').value = '';
+
+  // 4. Session storage
+  sessionStorage.removeItem('resume_skills');
+  sessionStorage.removeItem('resume_name');
+}
+
+// ── CHANGED: refreshResumes() ─────────────────────────────────────
+// Now performs a full reset instead of just reloading the list:
+//   1. Calls DELETE /resume/clear (backend deletes all records + files)
+//   2. On success → resetAll() to wipe UI
+//   3. Shows appropriate toast either way
+async function refreshResumes(btn) {
+  const original = btn.textContent;
+  btn.textContent = '↻ Clearing…';
+  btn.disabled = true;
+
+  try {
+    await api('/resume/clear', { method: 'DELETE' });
+    resetAll();
+    showToast('All resumes cleared', 'success', 2500);
+  } catch (e) {
+    showToast('Failed to clear: ' + e.message, 'error');
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}
+
+async function loadResumes() {
+  const el = document.getElementById('resume-list');
+  el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⏳</div><div class="empty-state-text">Loading…</div></div>`;
+
+  const raw = await api('/resume/list');
+
+  // Normalize: API may return [] directly or { resumes: [] }
+  const resumes = Array.isArray(raw) ? raw : (raw.resumes ?? []);
+
+  if (!resumes.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No resumes yet</div></div>`;
+    return;
+  }
+
+  el.innerHTML = resumes.map(r => `
+    <div style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick='showParsed(${JSON.stringify({name:r.name,email:r.email,phone:r.phone,skills:r.skills,experience:r.experience})}, "${r.original_name}")'>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span>📄</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${r.original_name}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${r.name || 'Unknown'} · ${formatDate(r.uploaded_at)}</div>
+        </div>
+        <span style="font-size:11px;color:var(--neon-purple)">${r.skills.length} skills</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+loadResumes();
+</script>
+{% endblock %}

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In — JobTracker AI</title>
+  <link rel="stylesheet" href="/static/css/main.css"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>"/>
+  <style>
+    .auth-layout {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .auth-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 40px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4), var(--shadow-glow-purple);
+      animation: fadeUp 0.4s ease forwards;
+    }
+    .auth-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .auth-logo-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, var(--neon-purple), var(--neon-blue));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 24px rgba(139,92,246,0.5);
+    }
+    .auth-logo-text {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 0%, var(--neon-purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .auth-title {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .auth-subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    /* ── Tabs ── */
+    .auth-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--bg-secondary, rgba(255,255,255,0.05));
+      border-radius: var(--radius-md);
+      padding: 4px;
+      margin-bottom: 24px;
+    }
+    .auth-tab {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      border-radius: calc(var(--radius-md) - 2px);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .auth-tab.active {
+      background: var(--neon-purple);
+      color: #fff;
+    }
+    /* ── Panels ── */
+    .auth-panel { display: none; }
+    .auth-panel.active { display: block; }
+    /* ── Error / Success ── */
+    .auth-error {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      color: #FCA5A5;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .auth-success {
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.3);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      color: #86EFAC;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .auth-footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .auth-footer a { color: var(--neon-purple); text-decoration: none; }
+    .auth-footer a:hover { text-decoration: underline; }
+    .btn-full { width: 100%; justify-content: center; padding: 11px; font-size: 14px; }
+    /* OTP row */
+    .otp-row { display: flex; gap: 8px; }
+    .otp-row .form-input { flex: 1; }
+    .otp-row .btn { white-space: nowrap; padding: 0 16px; }
+    /* Timer */
+    #otp-timer { font-size: 12px; color: var(--text-muted); margin-top: 4px; min-height: 18px; }
+
+    /* [NEW] Password label row — label + forgot link on same line */
+    .form-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .form-label-row .form-label { margin-bottom: 0; }
+    .forgot-link {
+      font-size: 12px;
+      color: var(--neon-purple);
+      text-decoration: none;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+    }
+    .forgot-link:hover { opacity: 1; text-decoration: underline; }
+  </style>
+</head>
+<body>
+<div class="auth-layout">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">🎯</div>
+      <span class="auth-logo-text">JobTracker AI</span>
+    </div>
+
+    <div class="auth-title">Welcome back</div>
+    <div class="auth-subtitle">Sign in to your account to continue</div>
+
+    <!-- Tabs -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('email')">Email</button>
+      <button class="auth-tab"        onclick="switchTab('otp')">📱 Phone OTP</button>
+    </div>
+
+    <!-- ── Email / Password panel ── -->
+    <div class="auth-panel active" id="panel-email">
+      <div class="auth-error" id="email-error"></div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input class="form-input" id="email" type="email" placeholder="you@example.com" autocomplete="email"/>
+      </div>
+      <div class="form-group">
+        <!-- [CHANGED] Label row: "Password" left + "Forgot Password?" right -->
+        <div class="form-label-row">
+          <label class="form-label">Password</label>
+          <a class="forgot-link" href="/auth/forgot-password">Forgot password?</a>
+        </div>
+        <input class="form-input" id="password" type="password" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <button class="btn btn-primary btn-full" id="login-btn" onclick="doLogin()">Sign In</button>
+    </div>
+
+    <!-- ── OTP panel ── -->
+    <div class="auth-panel" id="panel-otp">
+      <div class="auth-error"   id="otp-error"></div>
+      <div class="auth-success" id="otp-success"></div>
+
+      <!-- Step 1: phone -->
+      <div id="otp-step-1">
+        <div class="form-group">
+          <label class="form-label">Phone number</label>
+          <div class="otp-row">
+            <input class="form-input" id="phone" type="tel" placeholder="+91XXXXXXXXXX"/>
+            <button class="btn btn-primary" id="send-otp-btn" onclick="doSendOtp()">Send OTP</button>
+          </div>
+          <div id="otp-timer"></div>
+        </div>
+      </div>
+
+      <!-- Step 2: enter OTP (hidden until SMS sent) -->
+      <div id="otp-step-2" style="display:none;">
+        <div class="form-group">
+          <label class="form-label">Verification code</label>
+          <input class="form-input" id="otp-input" type="text" maxlength="6"
+                 placeholder="Enter 6-digit code" inputmode="numeric" autocomplete="one-time-code"/>
+        </div>
+        <button class="btn btn-primary btn-full" id="verify-otp-btn" onclick="doVerifyOtp()">Verify &amp; Sign In</button>
+        <p style="text-align:center;margin-top:12px;font-size:13px;color:var(--text-muted)">
+          Didn't get it? <a href="#" onclick="resetOtp();return false;">Resend</a>
+        </p>
+      </div>
+    </div>
+
+    <div class="auth-footer">
+      Don't have an account? <a href="/auth/signup">Create one</a>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/utils.js"></script>
+<script>
+  // ── Tab switching ──────────────────────────────────────────────
+  function switchTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach((t, i) => {
+      t.classList.toggle('active', (i === 0 && tab === 'email') || (i === 1 && tab === 'otp'));
+    });
+    document.getElementById('panel-email').classList.toggle('active', tab === 'email');
+    document.getElementById('panel-otp').classList.toggle('active',  tab === 'otp');
+  }
+
+  // ── Email/Password login (unchanged) ──────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const activePanel = document.querySelector('.auth-panel.active').id;
+      if (activePanel === 'panel-email') doLogin();
+      else if (document.getElementById('otp-step-2').style.display !== 'none') doVerifyOtp();
+    }
+  });
+
+  async function doLogin() {
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const errEl    = document.getElementById('email-error');
+    const btn      = document.getElementById('login-btn');
+    errEl.style.display = 'none';
+
+    if (!email || !password) {
+      errEl.textContent = 'Please enter your email and password.';
+      errEl.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Signing in…';
+    try {
+      const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      window.location.href = data.redirect || '/';
+    } catch (e) {
+      errEl.textContent = e.message || 'Login failed. Please try again.';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.innerHTML = 'Sign In';
+    }
+  }
+
+  // ── OTP flow ───────────────────────────────────────────────────
+  let otpTimerInterval = null;
+
+  function showOtpError(msg) {
+    const el = document.getElementById('otp-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+    document.getElementById('otp-success').style.display = 'none';
+  }
+
+  function showOtpSuccess(msg) {
+    const el = document.getElementById('otp-success');
+    el.textContent = msg;
+    el.style.display = 'block';
+    document.getElementById('otp-error').style.display = 'none';
+  }
+
+  function clearOtpMessages() {
+    document.getElementById('otp-error').style.display   = 'none';
+    document.getElementById('otp-success').style.display = 'none';
+  }
+
+  function startTimer(seconds) {
+    const el = document.getElementById('otp-timer');
+    clearInterval(otpTimerInterval);
+    let remaining = seconds;
+    const update = () => {
+      const m = String(Math.floor(remaining / 60)).padStart(2, '0');
+      const s = String(remaining % 60).padStart(2, '0');
+      el.textContent = `Code expires in ${m}:${s}`;
+      if (remaining <= 0) {
+        clearInterval(otpTimerInterval);
+        el.textContent = 'Code expired. Please resend.';
+      }
+      remaining--;
+    };
+    update();
+    otpTimerInterval = setInterval(update, 1000);
+  }
+
+  function resetOtp() {
+    clearInterval(otpTimerInterval);
+    document.getElementById('otp-step-1').style.display = 'block';
+    document.getElementById('otp-step-2').style.display = 'none';
+    document.getElementById('otp-timer').textContent = '';
+    document.getElementById('send-otp-btn').disabled = false;
+    document.getElementById('send-otp-btn').textContent = 'Send OTP';
+    clearOtpMessages();
+  }
+
+  async function doSendOtp() {
+    const phone = document.getElementById('phone').value.trim();
+    const btn   = document.getElementById('send-otp-btn');
+    clearOtpMessages();
+
+    if (!phone) {
+      showOtpError('Please enter your phone number.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>';
+
+    try {
+      await api('/auth/send-otp', { method: 'POST', body: JSON.stringify({ phone }) });
+      showOtpSuccess('OTP sent! Check your SMS.');
+      document.getElementById('otp-step-1').style.display = 'none';
+      document.getElementById('otp-step-2').style.display = 'block';
+      startTimer(300);
+    } catch (e) {
+      showOtpError(e.message || 'Failed to send OTP. Try again.');
+      btn.disabled = false;
+      btn.textContent = 'Send OTP';
+    }
+  }
+
+  async function doVerifyOtp() {
+    const phone = document.getElementById('phone').value.trim();
+    const otp   = document.getElementById('otp-input').value.trim();
+    const btn   = document.getElementById('verify-otp-btn');
+    clearOtpMessages();
+
+    if (!otp || otp.length !== 6) {
+      showOtpError('Please enter the 6-digit code.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Verifying…';
+
+    try {
+      const data = await api('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ phone, otp }) });
+      clearInterval(otpTimerInterval);
+      window.location.href = data.redirect || '/';
+    } catch (e) {
+      showOtpError(e.message || 'Verification failed. Try again.');
+      btn.disabled = false;
+      btn.textContent = 'Verify & Sign In';
+    }
+  }
+</script>
+</body>
+</html>

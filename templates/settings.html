@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-header fade-in">
+  <h1>Settings</h1>
+  <p>Manage your account preferences and appearance</p>
+</div>
+
+<!-- CHANGED: removed Account, Change Password, and Danger Zone sections -->
+<!-- Only the Appearance / Theme card remains -->
+<div style="max-width:860px">
+  <div class="card fade-in">
+    <div class="card-header">
+      <span class="card-title">🎨 Appearance</span>
+    </div>
+
+    <div style="margin-bottom:6px;font-size:13px;color:var(--text-secondary)">Theme</div>
+    <div class="theme-options" id="theme-options">
+      <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-label">Dark</span>
+        <span class="theme-check hidden">✓</span>
+      </button>
+      <button class="theme-btn" data-theme="light" onclick="setTheme('light')">
+        <span class="theme-icon">☀️</span>
+        <span class="theme-label">Light</span>
+        <span class="theme-check hidden">✓</span>
+      </button>
+      <button class="theme-btn" data-theme="system" onclick="setTheme('system')">
+        <span class="theme-icon">💻</span>
+        <span class="theme-label">System</span>
+        <span class="theme-check hidden">✓</span>
+      </button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--text-muted)" id="theme-hint"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Theme toggle (delegated to utils.js setTheme)
+function refreshThemeUI() {
+  const current = localStorage.getItem('theme') || 'system';
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    const isActive = btn.dataset.theme === current;
+    btn.classList.toggle('active', isActive);
+    btn.querySelector('.theme-check').classList.toggle('hidden', !isActive);
+  });
+  const hint = document.getElementById('theme-hint');
+  if (current === 'system') {
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    hint.textContent = `System preference: ${isDark ? 'dark' : 'light'} mode active`;
+  } else {
+    hint.textContent = '';
+  }
+}
+
+// Override setTheme to also refresh UI
+const _origSetTheme = window.setTheme;
+window.setTheme = function(theme) {
+  _origSetTheme(theme);
+  refreshThemeUI();
+};
+
+window.addEventListener('DOMContentLoaded', () => {
+  refreshThemeUI();
+});
+</script>
+{% endblock %}

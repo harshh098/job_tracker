@@ -1,0 +1,5 @@
+job_tracker/ 
+__pycache__/ 
+*.db 
+.env 
+uploads/ 

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Create Account — JobTracker AI</title>
+  <link rel="stylesheet" href="/static/css/main.css"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>"/>
+  <style>
+    .auth-layout {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .auth-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 40px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4), var(--shadow-glow-purple);
+      animation: fadeUp 0.4s ease forwards;
+    }
+    .auth-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .auth-logo-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, var(--neon-purple), var(--neon-blue));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 24px rgba(139,92,246,0.5);
+    }
+    .auth-logo-text {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 0%, var(--neon-purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .auth-title  { font-family: var(--font-display); font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+    .auth-subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 28px; }
+    .auth-error {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      color: #FCA5A5;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .auth-footer { text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-muted); }
+    .auth-footer a { color: var(--neon-purple); text-decoration: none; }
+    .auth-footer a:hover { text-decoration: underline; }
+    .btn-full { width: 100%; justify-content: center; padding: 11px; font-size: 14px; }
+    .pw-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  </style>
+</head>
+<body>
+<div class="auth-layout">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">🎯</div>
+      <span class="auth-logo-text">JobTracker AI</span>
+    </div>
+
+    <div class="auth-title">Create your account</div>
+    <div class="auth-subtitle">Start tracking your job applications today</div>
+
+    <div class="auth-error" id="auth-error"></div>
+
+    <div class="form-group">
+      <label class="form-label">Email address</label>
+      <input class="form-input" id="email" type="email" placeholder="you@example.com" autocomplete="email"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" id="password" type="password" placeholder="Min. 6 characters" autocomplete="new-password"/>
+      <div class="pw-hint">At least 6 characters</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Confirm password</label>
+      <input class="form-input" id="confirm" type="password" placeholder="Repeat your password" autocomplete="new-password"/>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="signup-btn" onclick="doSignup()">
+      Create Account
+    </button>
+
+    <div class="auth-footer">
+      Already have an account? <a href="/auth/login">Sign in</a>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/utils.js"></script>
+<script>
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') doSignup(); });
+
+  async function doSignup() {
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const confirm  = document.getElementById('confirm').value;
+    const errEl    = document.getElementById('auth-error');
+    const btn      = document.getElementById('signup-btn');
+    errEl.style.display = 'none';
+
+    if (!email || !password) {
+      errEl.textContent = 'Please fill in all fields.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (password.length < 6) {
+      errEl.textContent = 'Password must be at least 6 characters.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (password !== confirm) {
+      errEl.textContent = 'Passwords do not match.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Creating account…';
+
+    try {
+      const data = await api('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      window.location.href = data.redirect || '/';
+    } catch (e) {
+      errEl.textContent = e.message || 'Signup failed. Please try again.';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.innerHTML = 'Create Account';
+    }
+  }
+</script>
+</body>
+</html>

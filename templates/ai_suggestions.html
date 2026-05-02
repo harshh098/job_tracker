@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block title %}AI Suggestions{% endblock %}
+{% block page_title %}AI Suggestions{% endblock %}
+
+{% block content %}
+<div class="page-header fade-in">
+  <h1>AI Career Coach</h1>
+  <p>Analyze job descriptions and get personalized suggestions powered by Groq LLM</p>
+</div>
+
+<div class="two-col" style="align-items:start">
+  <!-- Input -->
+  <div>
+    <div class="card fade-in">
+      <div class="card-header">
+        <span class="card-title">📝 Job Description</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Paste the job description</label>
+        <textarea class="form-textarea" id="job-desc" style="min-height:200px" placeholder="Paste the full job description here…"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Your Skills (optional — auto-loaded from last resume)</label>
+        <input class="form-input" id="user-skills" placeholder="python, react, docker, sql…"/>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="analyze-btn" onclick="analyze()">
+          🤖 Analyze Match
+        </button>
+        <button class="btn btn-ghost" id="letter-btn" onclick="generateLetter()">
+          ✉️ Cover Letter
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div>
+    <!-- Match Score Card -->
+    <div class="card fade-in" style="animation-delay:0.05s" id="score-card">
+      <div class="card-header">
+        <span class="card-title">📊 Match Analysis</span>
+        <span id="score-badge" style="font-size:12px;color:var(--text-muted)">Run analysis to see results</span>
+      </div>
+
+      <div id="analysis-placeholder">
+        <div class="empty-state">
+          <div class="empty-state-icon">🤖</div>
+          <div class="empty-state-text">Paste a job description and click Analyze</div>
+        </div>
+      </div>
+
+      <div id="analysis-result" class="hidden">
+        <!-- Score -->
+        <div style="text-align:center;padding:20px 0 24px;">
+          <div class="score-circle" id="score-circle" style="--pct: 0%">
+            <span class="score-circle-text" id="score-num">0%</span>
+          </div>
+          <div style="margin-top:12px;font-size:13px;color:var(--text-muted)" id="score-summary"></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Strengths -->
+        <div class="mb-16">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">💪 Your Strengths</div>
+          <div id="strengths-list"></div>
+        </div>
+
+        <!-- Missing Skills -->
+        <div class="mb-16">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">🚧 Missing Skills</div>
+          <div id="missing-skills" class="skills-container"></div>
+        </div>
+
+        <!-- Suggestions -->
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">💡 Suggestions</div>
+          <div id="suggestions-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cover Letter Card -->
+    <div class="card fade-in mt-16 hidden" style="animation-delay:0.1s" id="cover-letter-card">
+      <div class="card-header">
+        <span class="card-title">✉️ Cover Letter</span>
+        <button class="btn btn-ghost btn-sm" onclick="copyLetter()">📋 Copy</button>
+      </div>
+      <div id="cover-letter-text" style="font-size:13.5px;line-height:1.8;color:var(--text-secondary);white-space:pre-wrap"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Load session data on page ready ─────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  // Auto-fill skills from last parsed resume
+  const skills = sessionStorage.getItem('resume_skills');
+  if (skills) {
+    try {
+      const arr = JSON.parse(skills);
+      document.getElementById('user-skills').value = arr.join(', ');
+    } catch (e) {}
+  }
+
+  // Auto-fill job description if navigated from Jobs page
+  const desc = sessionStorage.getItem('analyze_desc');
+  if (desc) {
+    document.getElementById('job-desc').value = desc;
+    sessionStorage.removeItem('analyze_desc');
+  }
+
+  // Auto-fill basic job info if navigated from Jobs page (no full description)
+  const job = sessionStorage.getItem('analyze_job');
+  if (job) {
+    try {
+      const j = JSON.parse(job);
+      if (!document.getElementById('job-desc').value) {
+        document.getElementById('job-desc').value =
+          `Position: ${j.title}\nCompany: ${j.company}\n\nPlease paste the full description here…`;
+      }
+    } catch (e) {}
+    sessionStorage.removeItem('analyze_job');
+  }
+});
+
+// ── Analyze Match ────────────────────────────────────────────────────────────
+async function analyze() {
+  const desc = document.getElementById('job-desc').value.trim();
+  if (!desc) { showToast('Please paste a job description', 'error'); return; }
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Analyzing…';
+
+  const skillsRaw = document.getElementById('user-skills').value || '';
+  const skills = skillsRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+  try {
+    const data = await api('/ai/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ job_description: desc, resume_skills: skills })
+    });
+    renderAnalysis(data);
+    showToast('Analysis complete!', 'success');
+  } catch (e) {
+    showToast(e.message || 'Analysis failed. Please try again.', 'error');
+    console.error('[Analyze Error]', e);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🤖 Analyze Match';
+  }
+}
+
+// ── Render Analysis Results ──────────────────────────────────────────────────
+function renderAnalysis(d) {
+  document.getElementById('analysis-placeholder').classList.add('hidden');
+  document.getElementById('analysis-result').classList.remove('hidden');
+
+  const score = d.match_score || 0;
+  document.getElementById('score-circle').style.background =
+    `conic-gradient(${score >= 70 ? 'var(--neon-green)' : score >= 40 ? 'var(--neon-amber)' : 'var(--neon-red)'} ${score}%, rgba(255,255,255,0.05) 0)`;
+  document.getElementById('score-num').textContent = `${score}%`;
+  document.getElementById('score-num').style.color =
+    score >= 70 ? 'var(--neon-green)' : score >= 40 ? 'var(--neon-amber)' : 'var(--neon-red)';
+  document.getElementById('score-summary').textContent = d.summary || '';
+  document.getElementById('score-badge').textContent = `Match: ${score}%`;
+
+  // Strengths
+  const strengthEl = document.getElementById('strengths-list');
+  if (d.strengths && d.strengths.length) {
+    strengthEl.innerHTML = d.strengths.map(s =>
+      `<div class="suggestion-item"><span class="suggestion-icon">✅</span><span>${s}</span></div>`
+    ).join('');
+  } else {
+    strengthEl.innerHTML = '<span style="color:var(--text-muted);font-size:13px">No specific strengths identified</span>';
+  }
+
+  // Missing Skills
+  const missingEl = document.getElementById('missing-skills');
+  if (d.missing_skills && d.missing_skills.length) {
+    missingEl.innerHTML = d.missing_skills.map(s =>
+      `<span class="skill-tag" style="background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.2);color:var(--neon-red)">⚠️ ${s}</span>`
+    ).join('');
+  } else {
+    missingEl.innerHTML = '<span style="color:var(--neon-green);font-size:13px">🎉 No major skill gaps!</span>';
+  }
+
+  // Suggestions
+  const suggestEl = document.getElementById('suggestions-list');
+  if (d.suggestions && d.suggestions.length) {
+    suggestEl.innerHTML = d.suggestions.map(s =>
+      `<div class="suggestion-item"><span class="suggestion-icon">💡</span><span>${s}</span></div>`
+    ).join('');
+  }
+}
+
+// ── Generate Cover Letter ────────────────────────────────────────────────────
+async function generateLetter() {
+  const desc = document.getElementById('job-desc').value.trim();
+  if (!desc) {
+    showToast('Please paste a job description first', 'error');
+    return;
+  }
+
+  const btn    = document.getElementById('letter-btn');
+  const card   = document.getElementById('cover-letter-card');
+  const textEl = document.getElementById('cover-letter-text');
+
+  // Set loading state
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Generating…';
+
+  // Show card immediately with placeholder so user gets instant feedback
+  textEl.style.color = 'var(--text-muted)';
+  textEl.textContent = 'Generating your cover letter, please wait…';
+  card.classList.remove('hidden');
+  card.scrollIntoView({ behavior: 'smooth' });
+
+  const skillsRaw = document.getElementById('user-skills').value || '';
+  const skills    = skillsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const name      = sessionStorage.getItem('resume_name') || '';
+
+  try {
+    const data = await api('/ai/cover-letter', {
+      method: 'POST',
+      body: JSON.stringify({
+        job_description: desc,
+        skills,
+        name
+      })
+    });
+
+    // Guard: backend must return { cover_letter: "..." }
+    if (!data || !data.cover_letter) {
+      throw new Error('No cover letter returned from server. Check the backend response.');
+    }
+
+    // Render result
+    textEl.style.color = 'var(--text-secondary)';
+    textEl.textContent = data.cover_letter;
+    showToast('Cover letter generated!', 'success');
+
+  } catch (e) {
+    // On error: hide card and surface the real message
+    textEl.textContent = '';
+    card.classList.add('hidden');
+    showToast(e.message || 'Failed to generate cover letter. Please try again.', 'error');
+    console.error('[Cover Letter Error]', e);
+
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '✉️ Cover Letter';
+  }
+}
+
+// ── Copy Cover Letter to Clipboard ───────────────────────────────────────────
+function copyLetter() {
+  const text = document.getElementById('cover-letter-text').textContent;
+  if (!text || !text.trim()) {
+    showToast('Nothing to copy yet', 'error');
+    return;
+  }
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('Copied to clipboard!', 'success'))
+    .catch(() => showToast('Copy failed — please select and copy manually', 'error'));
+}
+</script>
+{% endblock %}

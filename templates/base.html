@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}JobTracker AI{% endblock %} — JobTracker</title>
+  <link rel="stylesheet" href="/static/css/main.css"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>"/>
+  <!-- Apply theme before paint to avoid flash -->
+  <script>
+    (function() {
+      var t = localStorage.getItem('theme') || 'system';
+      var cls = t === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : t;
+      document.documentElement.className = cls;
+    })();
+  </script>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🎯</div>
+      <span class="logo-text">JobTracker</span>
+    </div>
+    <nav class="sidebar-nav">
+      <span class="nav-section-label">Overview</span>
+      <a href="/" class="nav-item">
+        <span class="nav-icon">📊</span> Dashboard
+      </a>
+      <a href="/resume/" class="nav-item">
+        <span class="nav-icon">📄</span> Resume
+      </a>
+      <span class="nav-section-label">Tools</span>
+      <a href="/jobs/" class="nav-item">
+        <span class="nav-icon">🔍</span> Job Scraper
+      </a>
+      <a href="/ai/" class="nav-item">
+        <span class="nav-icon">🤖</span> AI Suggestions
+      </a>
+      <a href="/reminders/" class="nav-item">
+        <span class="nav-icon">🔔</span> Reminders
+      </a>
+      <a href="/settings/" class="nav-item">
+        <span class="nav-icon">⚙️</span> Settings
+      </a>
+      <a href="/profile/" class="nav-item">
+        <span class="nav-icon">👤</span> Profile
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="/auth/logout" class="nav-item" style="color:var(--text-muted)">
+        <span class="nav-icon">🚪</span>
+        <span style="font-size:13px">Sign Out</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="sidebar-toggle" aria-label="Menu">☰</button>
+      <span class="topbar-title">{% block page_title %}Dashboard{% endblock %}</span>
+      <div class="search-bar">
+        <span class="search-icon">🔎</span>
+        <input type="text" id="global-search" placeholder="Search jobs, companies…" autocomplete="off"/>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" title="Notifications" onclick="location.href='/reminders/'">
+          🔔<span class="notif-dot"></span>
+        </button>
+
+        <!-- Profile dropdown trigger -->
+        <div class="profile-dropdown-wrap" id="profile-wrap">
+          <div class="avatar" id="avatar-btn" title="Profile" onclick="toggleProfileMenu()">
+            <span id="avatar-text">U</span>
+          </div>
+          <div class="profile-menu hidden" id="profile-menu">
+            <div class="profile-menu-header">
+              <div class="profile-menu-email" id="profile-email">Loading…</div>
+            </div>
+            <div class="profile-menu-divider"></div>
+            <a href="/profile/"  class="profile-menu-item">👤 My Profile</a>
+            <a href="/settings/" class="profile-menu-item">⚙️ Settings</a>
+            <div class="profile-menu-divider"></div>
+            <a href="/auth/logout" class="profile-menu-item profile-menu-danger">🚪 Sign Out</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Page -->
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/utils.js"></script>
+<script>
+/**
+ * Derive avatar initials from a display name or email.
+ *
+ * Rules:
+ *   - "John Doe"  → "JD"  (first letter of first word + first letter of last word)
+ *   - "Alice"     → "A"   (single name: first letter only)
+ *   - email only  → use local part (before @), split on . _ - then apply same rules
+ *   - fallback    → "U"
+ */
+function deriveInitials(name, email) {
+  const raw = (name && name.trim())
+    ? name.trim()
+    : (email || '').split('@')[0].replace(/[._\-]+/g, ' ').trim();
+
+  if (!raw) return 'U';
+
+  const words = raw.split(/\s+/).filter(Boolean);
+
+  if (words.length >= 2) {
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  }
+
+  return words[0][0].toUpperCase();
+}
+
+/* Load current user profile → populate email label + avatar initials.
+   FIXED: /profile instead of /settings/profile */
+(async function () {
+  try {
+    const d = await api('/profile/api');                       // ← FIXED
+
+    const emailEl = document.getElementById('profile-email');
+    if (emailEl) emailEl.textContent = d.email || d.phone || '';
+
+    const avatarEl = document.getElementById('avatar-text');
+    if (avatarEl) {
+      avatarEl.textContent = deriveInitials(d.display_name || d.name || d.full_name || '', d.email || '');
+    }
+  } catch (e) {
+    // Leave "U" placeholder on failure — silent, non-blocking
+  }
+})();
+
+function toggleProfileMenu() {
+  const menu = document.getElementById('profile-menu');
+  menu.classList.toggle('hidden');
+}
+
+// Close profile menu on outside click
+document.addEventListener('click', function (e) {
+  const wrap = document.getElementById('profile-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('profile-menu')?.classList.add('hidden');
+  }
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

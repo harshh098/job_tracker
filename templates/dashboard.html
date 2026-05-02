@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header fade-in">
+  <h1>Application Overview</h1>
+  <p>Track and manage all your job applications in one place</p>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid stagger" id="stats-grid">
+  <div class="stat-card" data-color="purple">
+    <span class="stat-icon">📁</span>
+    <div class="stat-label">Total Jobs</div>
+    <div class="stat-value" id="stat-total">—</div>
+  </div>
+  <div class="stat-card" data-color="blue">
+    <span class="stat-icon">📤</span>
+    <div class="stat-label">Applied</div>
+    <div class="stat-value" id="stat-applied">—</div>
+  </div>
+  <div class="stat-card" data-color="cyan">
+    <span class="stat-icon">📨</span>
+    <div class="stat-label">Followed Up</div>
+    <div class="stat-value" id="stat-followed">—</div>
+  </div>
+  <div class="stat-card" data-color="green">
+    <span class="stat-icon">🎉</span>
+    <div class="stat-label">Offered</div>
+    <div class="stat-value" id="stat-offered">—</div>
+  </div>
+  <div class="stat-card" data-color="red">
+    <span class="stat-icon">❌</span>
+    <div class="stat-label">Rejected</div>
+    <div class="stat-value" id="stat-rejected">—</div>
+  </div>
+</div>
+
+<!-- Jobs Table -->
+<div class="card fade-in" style="animation-delay:0.15s">
+  <div class="card-header">
+    <span class="card-title">📋 All Applications</span>
+    <div class="flex gap-8">
+      <select id="filter-status">
+        <option value="">All Statuses</option>
+        <option value="saved">Saved</option>
+        <option value="applied">Applied</option>
+        <option value="followed_up">Followed Up</option>
+        <option value="offered">Offered</option>
+        <option value="rejected">Rejected</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="jobs-table">
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Company</th>
+          <th>Location</th>
+          <th>Match %</th>
+          <th>Source</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="jobs-tbody">
+        <tr><td colspan="8">
+          <div class="empty-state">
+            <div class="empty-state-icon">⏳</div>
+            <div class="empty-state-text">Loading jobs…</div>
+          </div>
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allJobs = [];
+
+async function loadStats() {
+  try {
+    const d = await api('/api/stats');
+    document.getElementById('stat-total').textContent = d.total;
+    document.getElementById('stat-applied').textContent = d.applied;
+    document.getElementById('stat-followed').textContent = d.followed_up;
+    document.getElementById('stat-offered').textContent = d.offered;
+    document.getElementById('stat-rejected').textContent = d.rejected;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function loadJobs() {
+  try {
+    allJobs = await api('/api/jobs/table');
+    renderTable(allJobs);
+  } catch (e) {
+    document.getElementById('jobs-tbody').innerHTML = `
+      <tr><td colspan="8"><div class="empty-state">
+        <div class="empty-state-icon">⚠️</div>
+        <div class="empty-state-text">Failed to load jobs</div>
+      </div></td></tr>`;
+  }
+}
+
+function renderTable(jobs) {
+  const tbody = document.getElementById('jobs-tbody');
+  if (!jobs.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+      <div class="empty-state-icon">📭</div>
+      <div class="empty-state-text">No jobs yet — <a href="/jobs/" style="color:var(--neon-purple)">scrape some jobs</a></div>
+    </div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = jobs.map(j => `
+    <tr id="row-${j.id}">
+      <td>${escHtml(j.title)}</td>
+      <td>${escHtml(j.company)}</td>
+      <td>${escHtml(j.location || '—')}</td>
+      <td>
+        <div class="match-score">
+          <div class="score-bar"><div class="score-fill" style="width:${j.match_score}%"></div></div>
+          <span class="score-text">${j.match_score}%</span>
+        </div>
+      </td>
+      <td><span style="font-size:12px;color:var(--text-muted)">${escHtml(j.source)}</span></td>
+      <td>
+        <select class="status-select" data-job-id="${j.id}" style="border-radius:20px;padding:3px 8px;font-size:11px;">
+          ${['saved','applied','followed_up','offered','rejected'].map(s =>
+            `<option value="${s}" ${j.status===s?'selected':''}>${s.replace('_',' ')}</option>`
+          ).join('')}
+        </select>
+      </td>
+      <td style="font-size:12px;color:var(--text-muted)">${formatDate(j.created_at)}</td>
+      <td>
+        <div class="action-btns" style="gap:6px">
+          <!-- REMOVED: Apply button -->
+          <button class="btn btn-danger btn-sm btn-icon" title="Delete"
+            onclick="deleteJob(${j.id})">🗑</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('.status-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      updateStatus(parseInt(sel.dataset.jobId), sel.value);
+    });
+  });
+
+  if (typeof upgradeAllSelects === 'function') upgradeAllSelects();
+}
+
+function filterTable() {
+  const status = document.getElementById('filter-status').value;
+  const filtered = status ? allJobs.filter(j => j.status === status) : allJobs;
+  renderTable(filtered);
+}
+
+async function updateStatus(id, status) {
+  try {
+    await api(`/api/jobs/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    showToast('Status updated', 'success', 2000);
+    await loadStats();
+    const job = allJobs.find(j => j.id === id);
+    if (job) job.status = status;
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function deleteJob(id) {
+  if (!confirm('Delete this job?')) return;
+  try {
+    await api(`/api/jobs/${id}`, { method: 'DELETE' });
+    allJobs = allJobs.filter(j => j.id !== id);
+    renderTable(allJobs);
+    await loadStats();
+    showToast('Job deleted', 'success');
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Global search
+document.getElementById('global-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  const filtered = allJobs.filter(j =>
+    (j.title||'').toLowerCase().includes(q) ||
+    (j.company||'').toLowerCase().includes(q) ||
+    (j.location||'').toLowerCase().includes(q)
+  );
+  renderTable(filtered);
+});
+
+document.getElementById('filter-status').addEventListener('change', filterTable);
+
+loadStats();
+loadJobs();
+</script>
+{% endblock %}

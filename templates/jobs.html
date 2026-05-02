@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}Job Scraper{% endblock %}
+{% block page_title %}Job Scraper{% endblock %}
+
+{% block content %}
+<div class="page-header fade-in">
+  <h1>Job Scraper</h1>
+  <p>Search and import jobs from the web directly into your tracker</p>
+</div>
+
+<!-- Scraper Form -->
+<div class="card scraper-card fade-in mb-20">
+  <div class="card-header">
+    <span class="card-title">🔍 Search Jobs</span>
+    <span style="font-size:12px;color:var(--text-muted)">Powered by JSearch API</span>
+  </div>
+  <div class="scraper-form" id="scraper-form">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Job Role *</label>
+      <input class="form-input" id="s-role" placeholder="e.g. Python Developer" required/>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Location</label>
+      <input class="form-input" id="s-location" placeholder="e.g. Remote, New York"/>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Experience Level</label>
+      <select class="form-input" id="s-exp">
+        <option value="">Any level</option>
+        <option value="entry level">Entry Level</option>
+        <option value="mid level">Mid Level</option>
+        <option value="senior">Senior</option>
+        <option value="lead">Lead / Principal</option>
+      </select>
+    </div>
+    <div style="padding-top:20px">
+      <button class="btn btn-primary" id="scrape-btn" onclick="scrapeJobs()">
+        🔍 Search
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Manually -->
+<div class="card fade-in mb-20" style="animation-delay:0.05s">
+  <div class="card-header">
+    <span class="card-title">➕ Add Job Manually</span>
+    <button class="btn btn-ghost btn-sm" onclick="toggleManual()">Toggle</button>
+  </div>
+  <div id="manual-form" class="hidden">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Job Title *</label>
+        <input class="form-input" id="m-title" placeholder="Software Engineer"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Company *</label>
+        <input class="form-input" id="m-company" placeholder="Acme Corp"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input class="form-input" id="m-location" placeholder="Remote / City, State"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Job URL</label>
+        <input class="form-input" id="m-url" type="url" placeholder="https://..."/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea class="form-textarea" id="m-desc" placeholder="Paste job description here…"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="addManual()">➕ Add Job</button>
+  </div>
+</div>
+
+<!-- Results -->
+<div class="card fade-in" style="animation-delay:0.1s">
+  <div class="card-header">
+    <span class="card-title">📋 Scraped Results</span>
+    <span id="result-count" style="font-size:12px;color:var(--text-muted)"></span>
+  </div>
+  <div id="results-area">
+    <div class="empty-state">
+      <div class="empty-state-icon">🔍</div>
+      <div class="empty-state-text">Search for jobs to see results here</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Cache for raw job objects — keyed by index.
+//    Populated on every render (fresh search OR restored from localStorage).
+const _jobsCache = {};
+
+// ── localStorage key for persisting scraper results across page reloads ──
+const SCRAPER_STORAGE_KEY = 'jobtracker_scraper_results';
+
+function toggleManual() {
+  document.getElementById('manual-form').classList.toggle('hidden');
+}
+
+// ── CHANGED: clears localStorage before fetching so stale results are never
+//    shown if the new search fails or returns empty. ──────────────────────────
+async function scrapeJobs() {
+  const role = document.getElementById('s-role').value.trim();
+  if (!role) { showToast('Please enter a job role', 'error'); return; }
+
+  // Clear persisted results before the new search so a reload mid-flight
+  // doesn't show the previous batch.
+  localStorage.removeItem(SCRAPER_STORAGE_KEY);
+
+  const btn = document.getElementById('scrape-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Searching…';
+  document.getElementById('results-area').innerHTML = `
+    <div class="empty-state"><div class="spinner" style="margin:0 auto"></div><div class="empty-state-text mt-16">Fetching jobs…</div></div>`;
+
+  try {
+    const data = await api('/jobs/scrape', {
+      method: 'POST',
+      body: JSON.stringify({
+        role,
+        location:   document.getElementById('s-location').value,
+        experience: document.getElementById('s-exp').value
+      })
+    });
+
+    // Persist to localStorage so results survive a page reload
+    // CHANGED: save happens here, after a successful API response only
+    try {
+      localStorage.setItem(SCRAPER_STORAGE_KEY, JSON.stringify({
+        jobs:  data.jobs,
+        found: data.found
+      }));
+    } catch (storageErr) {
+      // localStorage quota exceeded or unavailable — silently ignore,
+      // results are still shown in-memory for the current session
+      console.warn('[scrapeJobs] Could not persist results:', storageErr);
+    }
+
+    renderResults(data.jobs);
+    document.getElementById('result-count').textContent =
+      `${data.found} found — click ⭐ Interested to save to Dashboard`;
+    showToast(`Found ${data.found} jobs — click Interested to track them`, 'info');
+  } catch(e) {
+    console.error('[scrapeJobs] error:', e);
+    showToast(e.message, 'error');
+    document.getElementById('results-area').innerHTML = `
+      <div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">${e.message}</div></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🔍 Search';
+  }
+}
+
+function renderResults(jobs) {
+  const el = document.getElementById('results-area');
+  if (!jobs || !jobs.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No jobs found</div></div>`;
+    return;
+  }
+
+  // Cache every job object by index
+  jobs.forEach((j, idx) => { _jobsCache[idx] = j; });
+
+  el.innerHTML = jobs.map((j, idx) => `
+    <div id="job-card-${idx}" style="padding:16px;border-bottom:1px solid var(--border);transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.025)'" onmouseout="this.style.background=''">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:14px;color:var(--text-primary);margin-bottom:4px;">${escHtml(j.title)}</div>
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">
+            🏢 ${escHtml(j.company)}
+            ${j.location ? `&nbsp;·&nbsp; 📍 ${escHtml(j.location)}` : ''}
+            &nbsp;·&nbsp; <span style="color:var(--text-muted);font-size:11px">${escHtml(j.source)}</span>
+          </div>
+          ${j.description ? `<div style="font-size:12px;color:var(--text-muted);line-height:1.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escHtml(j.description)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;margin-top:2px;">
+          ${j.url && j.url !== '#' ? `<a href="${j.url}" target="_blank" class="btn btn-ghost btn-sm">🔗 Apply</a>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="analyzeThis(${idx})">🤖 AI</button>
+          <button
+            id="interested-btn-${idx}"
+            class="btn btn-ghost btn-sm"
+            style="color:var(--neon-purple, #a78bfa);border-color:var(--neon-purple, #a78bfa);"
+            onclick="markInterested(${idx})">
+            ⭐ Interested
+          </button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── CHANGED: on page load, restore previously fetched results from
+//    localStorage so the user doesn't lose their search on reload ─────────────
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const stored = localStorage.getItem(SCRAPER_STORAGE_KEY);
+    if (stored) {
+      const { jobs, found } = JSON.parse(stored);
+      if (jobs && jobs.length) {
+        renderResults(jobs);
+        document.getElementById('result-count').textContent =
+          `${found} found — click ⭐ Interested to save to Dashboard`;
+      }
+    }
+  } catch (e) {
+    // Corrupted storage entry — remove it and start clean
+    console.warn('[scraper] Could not restore results from localStorage:', e);
+    localStorage.removeItem(SCRAPER_STORAGE_KEY);
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function markInterested(idx) {
+  const job = _jobsCache[idx];
+  if (!job) {
+    console.error('[markInterested] No cached job for idx', idx);
+    showToast('Could not find job data. Try searching again.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById(`interested-btn-${idx}`);
+  if (!btn || btn.disabled) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Saving…';
+
+  console.log('[markInterested] Saving job:', job.title, '@', job.company);
+
+  try {
+    const res = await api('/jobs/save', {
+      method: 'POST',
+      body: JSON.stringify({
+        title:       job.title       || '',
+        company:     job.company     || '',
+        location:    job.location    || '',
+        description: job.description || '',
+        url:         job.url         || '',
+        source:      job.source      || 'jsearch'
+      })
+    });
+
+    console.log('[markInterested] Response:', res);
+
+    if (res.duplicate) {
+      showToast('Already in your tracker', 'info', 2000);
+      btn.innerHTML = '✅ Saved';
+    } else {
+      showToast(`"${job.title}" saved to Dashboard!`, 'success');
+      btn.innerHTML = '✅ Saved';
+      btn.style.color = 'var(--green, #4ade80)';
+      btn.style.borderColor = 'var(--green, #4ade80)';
+    }
+  } catch(e) {
+    console.error('[markInterested] error:', e);
+    showToast(e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '⭐ Interested';
+  }
+}
+
+function analyzeThis(idx) {
+  const job = _jobsCache[idx];
+  if (!job) return;
+  sessionStorage.setItem('analyze_desc', job.description || '');
+  sessionStorage.setItem('analyze_job', JSON.stringify({ title: job.title, company: job.company }));
+  location.href = '/ai/';
+}
+
+async function addManual() {
+  const title   = document.getElementById('m-title').value.trim();
+  const company = document.getElementById('m-company').value.trim();
+  if (!title || !company) { showToast('Title and company are required', 'error'); return; }
+  try {
+    await api('/jobs/add', {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        company,
+        location:    document.getElementById('m-location').value,
+        url:         document.getElementById('m-url').value,
+        description: document.getElementById('m-desc').value
+      })
+    });
+    showToast('Job added to tracker!', 'success');
+    ['m-title','m-company','m-location','m-url','m-desc'].forEach(id => document.getElementById(id).value = '');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Reminders{% endblock %}
+{% block page_title %}Reminders{% endblock %}
+
+{% block content %}
+<div class="page-header fade-in">
+  <h1>Follow-up Reminders</h1>
+  <p>Never miss a follow-up with scheduled application reminders</p>
+</div>
+
+<div class="two-col" style="align-items:start">
+  <!-- Add Reminder Form -->
+  <div>
+    <div class="card fade-in">
+      <div class="card-header">
+        <span class="card-title">➕ Add Reminder</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Reminder Title *</label>
+        <input class="form-input" id="r-title" placeholder="e.g. Follow up with Acme Corp"/>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Message / Notes</label>
+        <textarea class="form-textarea" id="r-message" style="min-height:80px" placeholder="Add any notes about this follow-up…"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Remind At *</label>
+        <input class="form-input" id="r-date" type="datetime-local"/>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Link to Job (optional)</label>
+        <select class="form-input" id="r-job">
+          <option value="">— No job linked —</option>
+        </select>
+      </div>
+
+      <button class="btn btn-primary" onclick="addReminder()">🔔 Set Reminder</button>
+    </div>
+
+    <!-- Quick Reminders -->
+    <div class="card fade-in mt-16" style="animation-delay:0.1s">
+      <div class="card-header">
+        <span class="card-title">⚡ Quick Add</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-ghost" onclick="quickAdd('Follow up on application', 3)">📧 Follow up in 3 days</button>
+        <button class="btn btn-ghost" onclick="quickAdd('Send thank-you email', 1)">💌 Send thank-you tomorrow</button>
+        <button class="btn btn-ghost" onclick="quickAdd('Check application status', 7)">📋 Check status in 1 week</button>
+        <button class="btn btn-ghost" onclick="quickAdd('Negotiate offer deadline', 2)">🤝 Offer negotiation in 2 days</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reminders List -->
+  <div>
+    <div class="card fade-in" style="animation-delay:0.05s">
+      <div class="card-header">
+        <span class="card-title">🔔 All Reminders</span>
+        <div class="flex gap-8">
+          <select id="filter-reminder" onchange="filterReminders()">
+            <option value="">All</option>
+            <option value="pending">Pending</option>
+            <option value="done">Done</option>
+            <option value="dismissed">Dismissed</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadReminders()">↻</button>
+        </div>
+      </div>
+
+      <div id="reminders-list">
+        <div class="empty-state">
+          <div class="empty-state-icon">⏳</div>
+          <div class="empty-state-text">Loading reminders…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allReminders = [];
+let allJobs = [];
+
+function quickAdd(title, days) {
+  document.getElementById('r-title').value = title;
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(9, 0, 0, 0);
+  document.getElementById('r-date').value = d.toISOString().slice(0,16);
+}
+
+async function loadJobs() {
+  try {
+    allJobs = await api('/api/jobs/table');
+    const sel = document.getElementById('r-job');
+    sel.innerHTML = '<option value="">— No job linked —</option>' +
+      allJobs.map(j => `<option value="${j.id}">${j.title} @ ${j.company}</option>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function loadReminders() {
+  try {
+    allReminders = await api('/reminders/list');
+    renderReminders(allReminders);
+  } catch(e) {
+    document.getElementById('reminders-list').innerHTML = `
+      <div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">Failed to load</div></div>`;
+  }
+}
+
+function filterReminders() {
+  const status = document.getElementById('filter-reminder').value;
+  const filtered = status ? allReminders.filter(r => r.status === status) : allReminders;
+  renderReminders(filtered);
+}
+
+function renderReminders(reminders) {
+  const el = document.getElementById('reminders-list');
+  if (!reminders.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No reminders found</div></div>`;
+    return;
+  }
+  const now = new Date();
+  el.innerHTML = reminders.map(r => {
+    const remindDate = new Date(r.remind_at);
+    const isOverdue = r.status === 'pending' && remindDate < now;
+    return `
+      <div class="reminder-card status-${r.status}" style="${isOverdue ? 'border-color:rgba(239,68,68,0.3)' : ''}">
+        <div class="reminder-dot ${r.status}"></div>
+        <div class="reminder-body">
+          <div class="reminder-title">${escHtml(r.title)}</div>
+          <div class="reminder-meta">
+            🕐 ${formatDateTime(r.remind_at)}
+            ${isOverdue ? '<span style="color:var(--neon-red);margin-left:6px">OVERDUE</span>' : ''}
+            ${r.job_title ? `&nbsp;·&nbsp; 💼 ${escHtml(r.job_title)} @ ${escHtml(r.company)}` : ''}
+          </div>
+          ${r.message ? `<div style="font-size:12px;color:var(--text-muted);margin-top:4px">${escHtml(r.message)}</div>` : ''}
+        </div>
+        <div class="reminder-actions">
+          ${r.status === 'pending' ? `
+            <button class="btn btn-ghost btn-sm" onclick="setStatus(${r.id}, 'done')" title="Mark Done">✅</button>
+            <button class="btn btn-ghost btn-sm" onclick="setStatus(${r.id}, 'dismissed')" title="Dismiss">✖</button>
+          ` : `<button class="btn btn-ghost btn-sm" onclick="setStatus(${r.id}, 'pending')" title="Reopen">↩</button>`}
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteReminder(${r.id})" title="Delete">🗑</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function addReminder() {
+  const title = document.getElementById('r-title').value.trim();
+  const remind_at = document.getElementById('r-date').value;
+  if (!title || !remind_at) { showToast('Title and date are required', 'error'); return; }
+
+  try {
+    await api('/reminders/add', {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        message: document.getElementById('r-message').value,
+        remind_at,
+        job_id: document.getElementById('r-job').value || null
+      })
+    });
+    showToast('Reminder added!', 'success');
+    ['r-title','r-message','r-date'].forEach(id => document.getElementById(id).value = '');
+    await loadReminders();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function setStatus(id, status) {
+  try {
+    await api(`/reminders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    const r = allReminders.find(r => r.id === id);
+    if (r) r.status = status;
+    filterReminders();
+    showToast(`Marked as ${status}`, 'success', 1500);
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function deleteReminder(id) {
+  if (!confirm('Delete this reminder?')) return;
+  try {
+    await api(`/reminders/${id}`, { method: 'DELETE' });
+    allReminders = allReminders.filter(r => r.id !== id);
+    filterReminders();
+    showToast('Deleted', 'success', 1500);
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Set default datetime to tomorrow 9am
+const tomorrow = new Date();
+tomorrow.setDate(tomorrow.getDate() + 1);
+tomorrow.setHours(9,0,0,0);
+document.getElementById('r-date').value = tomorrow.toISOString().slice(0,16);
+
+loadJobs();
+loadReminders();
+</script>
+{% endblock %}

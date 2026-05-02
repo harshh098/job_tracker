@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block title %}Profile{% endblock %}
+{% block page_title %}Profile{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+
+  <!-- ── Profile Hero Card ── -->
+  <div class="profile-hero-card">
+    <div class="profile-hero-mesh"></div>
+    <div class="profile-hero-inner">
+      <div class="profile-avatar-wrap">
+        <div class="profile-avatar-ring">
+          <div class="profile-avatar-lg" id="hero-avatar">
+            {{ (session.get('display_name') or session.get('email') or 'JT')[:2] | upper }}
+          </div>
+        </div>
+        <div class="profile-avatar-status"></div>
+      </div>
+
+      <div class="profile-hero-info">
+        <div class="profile-hero-name" id="hero-name">Loading…</div>
+        <div class="profile-hero-email" id="hero-email">—</div>
+      </div>
+
+      <div class="profile-hero-stats">
+        <div class="profile-stat-item">
+          <div class="profile-stat-val" id="hs-jobs">—</div>
+          <div class="profile-stat-label">Jobs Saved</div>
+        </div>
+        <div class="profile-stat-divider"></div>
+        <div class="profile-stat-item">
+          <div class="profile-stat-val" id="hs-resumes">—</div>
+          <div class="profile-stat-label">Resumes</div>
+        </div>
+        <div class="profile-stat-divider"></div>
+        <div class="profile-stat-item">
+          <div class="profile-stat-val" id="hs-ai">—</div>
+          <div class="profile-stat-label">AI Suggestions</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Two-Column Body ── -->
+  <div class="profile-body-grid">
+
+    <!-- LEFT: Personal Info -->
+    <div class="profile-col">
+      <div class="card profile-section-card fade-in" style="animation-delay:.08s">
+        <div class="card-header">
+          <span class="card-title">👤 Personal Info</span>
+          <span class="profile-section-tag">Edit anytime</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="form-input" id="pi-name" type="text" placeholder="Your name"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email address</label>
+          <input class="form-input" id="pi-email" type="email" placeholder="you@example.com"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Job Title / Role</label>
+          <input class="form-input" id="pi-role" type="text" placeholder="e.g. Frontend Engineer"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <input class="form-input" id="pi-location" type="text" placeholder="City, Country"/>
+        </div>
+
+        <div style="margin-top:20px;display:flex;gap:10px;align-items:center">
+          <button class="btn btn-primary" onclick="saveProfile()">
+            💾 Save Changes
+          </button>
+          <span class="profile-save-hint" id="pi-hint"></span>
+        </div>
+      </div>
+
+      <!-- Account Activity -->
+      <div class="card profile-section-card fade-in" style="animation-delay:.14s;margin-top:20px">
+        <div class="card-header">
+          <span class="card-title">📅 Account Activity</span>
+        </div>
+        <div class="activity-row">
+          <div class="activity-icon" style="background:rgba(139,92,246,.12);color:var(--neon-purple)">🕒</div>
+          <div class="activity-body">
+            <div class="activity-label">Last Login</div>
+            <div class="activity-value" id="act-last-login">—</div>
+          </div>
+        </div>
+        <div class="activity-row">
+          <div class="activity-icon" style="background:rgba(16,185,129,.12);color:var(--neon-green)">📅</div>
+          <div class="activity-body">
+            <div class="activity-label">Member Since</div>
+            <div class="activity-value" id="act-member-since">—</div>
+          </div>
+        </div>
+        <div class="activity-row">
+          <div class="activity-icon" style="background:rgba(59,130,246,.12);color:var(--neon-blue)">🔐</div>
+          <div class="activity-body">
+            <div class="activity-label">Account Status</div>
+            <div class="activity-value">
+              <span class="badge badge-offered" style="font-size:11px">Active &amp; Verified</span>
+            </div>
+          </div>
+        </div>
+        <div class="activity-row" style="border-bottom:none">
+          <div class="activity-icon" style="background:rgba(6,182,212,.12);color:var(--neon-cyan)">🎯</div>
+          <div class="activity-body">
+            <div class="activity-label">Applications This Week</div>
+            <div class="activity-value" id="act-weekly">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Security + Danger -->
+    <div class="profile-col">
+      <div class="card profile-section-card fade-in" style="animation-delay:.11s">
+        <div class="card-header">
+          <span class="card-title">🔒 Change Password</span>
+        </div>
+        <div id="pw-error"
+          style="display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);
+                 border-radius:var(--radius-md);padding:10px 14px;color:#FCA5A5;font-size:13px;margin-bottom:12px">
+        </div>
+        <div id="pw-success"
+          style="display:none;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);
+                 border-radius:var(--radius-md);padding:10px 14px;color:#6EE7B7;font-size:13px;margin-bottom:12px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Current Password</label>
+          <div class="pw-input-wrap">
+            <input class="form-input" id="cur-pw" type="password" placeholder="••••••••"/>
+            <button class="pw-toggle" onclick="togglePw('cur-pw',this)" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <div class="pw-input-wrap">
+            <input class="form-input" id="new-pw" type="password" placeholder="Min. 6 characters"/>
+            <button class="pw-toggle" onclick="togglePw('new-pw',this)" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm New Password</label>
+          <div class="pw-input-wrap">
+            <input class="form-input" id="conf-pw" type="password" placeholder="Repeat new password"/>
+            <button class="pw-toggle" onclick="togglePw('conf-pw',this)" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="pw-strength-wrap" id="pw-strength-wrap" style="display:none">
+          <div class="pw-strength-label">Strength: <span id="pw-strength-text">—</span></div>
+          <div class="pw-strength-bar">
+            <div class="pw-strength-fill" id="pw-strength-fill"></div>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:20px;width:100%;justify-content:center"
+          onclick="changePassword()">
+          🔑 Update Password
+        </button>
+      </div>
+
+      <!-- Danger Zone -->
+      <div class="card profile-section-card fade-in"
+        style="animation-delay:.17s;margin-top:20px;border-color:rgba(239,68,68,.2)">
+        <div class="card-header">
+          <span class="card-title" style="color:var(--neon-red)">⚠️ Danger Zone</span>
+        </div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">
+          Once you sign out, your session will be cleared on this device.
+          All data remains safe in your account.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <a href="/auth/logout" class="btn btn-danger">🚪 Sign Out</a>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.profile-body-grid -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ─── Helpers ─── */
+function togglePw(id, btn) {
+  const el = document.getElementById(id);
+  if (el.type === 'password') { el.type = 'text';     btn.textContent = '🙈'; }
+  else                        { el.type = 'password'; btn.textContent = '👁'; }
+}
+
+/**
+ * Compute avatar initials from a display name or email prefix.
+ * - "Harsh Patel" → "HP"   (first + last word initials)
+ * - "Harsh"       → "HA"   (first 2 chars of single word)
+ * - empty/null    → "JT"   fallback
+ */
+function getInitials(name) {
+  if (!name || !name.trim()) return 'JT';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].slice(0, 2).toUpperCase();
+}
+
+/* Password strength meter */
+document.getElementById('new-pw').addEventListener('input', function () {
+  const v    = this.value;
+  const wrap = document.getElementById('pw-strength-wrap');
+  if (!v) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+
+  let score = 0;
+  if (v.length >= 6)           score++;
+  if (v.length >= 10)          score++;
+  if (/[A-Z]/.test(v))         score++;
+  if (/[0-9]/.test(v))         score++;
+  if (/[^A-Za-z0-9]/.test(v)) score++;
+
+  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very Strong'];
+  const colors = ['', '#EF4444', '#F59E0B', '#06B6D4', '#10B981', '#8B5CF6'];
+  const pct    = (score / 5) * 100;
+
+  document.getElementById('pw-strength-text').textContent  = labels[score] || '—';
+  document.getElementById('pw-strength-text').style.color  = colors[score];
+  const fill = document.getElementById('pw-strength-fill');
+  fill.style.width      = pct + '%';
+  fill.style.background = colors[score];
+});
+
+/* ─── Load profile data from backend — always fetches fresh on load ─── */
+async function loadProfile() {
+  try {
+    const d = await api('/profile/api');                       // ← FIXED: was '/profile'
+
+    const nameSource = d.display_name || d.email?.split('@')[0] || '';
+    const initials   = getInitials(nameSource);
+
+    /* hero */
+    document.getElementById('hero-avatar').textContent = initials;
+    document.getElementById('hero-name').textContent   = d.display_name || d.email?.split('@')[0] || '—';
+    document.getElementById('hero-email').textContent  = d.email || '—';
+
+    /* personal info form */
+    document.getElementById('pi-name').value     = d.display_name || '';
+    document.getElementById('pi-email').value    = d.email        || '';
+    document.getElementById('pi-role').value     = d.job_title    || '';
+    document.getElementById('pi-location').value = d.location     || '';
+
+    /* activity */
+    document.getElementById('act-member-since').textContent = formatDate(d.created_at);
+    document.getElementById('act-last-login').textContent   = d.last_login ? formatDateTime(d.last_login) : 'Just now';
+
+    /* sync topbar avatar */
+    const topbarAvatar = document.getElementById('avatar-btn');
+    if (topbarAvatar) topbarAvatar.textContent = initials;
+  } catch (e) {
+    console.error('Profile load error', e);
+    /* Only fall back to session values if API is unreachable — no silent reset */
+    document.getElementById('hero-name').textContent  = '—';
+    document.getElementById('hero-email').textContent = '—';
+  }
+}
+
+/* ─── Load stats ─── */
+async function loadStats() {
+  try {
+    const d = await api('/api/stats');
+    document.getElementById('hs-jobs').textContent    = d.total   ?? '—';
+    document.getElementById('act-weekly').textContent = d.applied ?? '—';
+  } catch (e) {}
+
+  try {
+    const r = await api('/resume/status');
+    document.getElementById('hs-resumes').textContent = r.has_resume ? '1' : '0';
+  } catch (e) { document.getElementById('hs-resumes').textContent = '—'; }
+
+  document.getElementById('hs-ai').textContent = '∞';
+}
+
+/* ─── Save profile ─── */
+async function saveProfile() {
+  const hint = document.getElementById('pi-hint');
+  hint.textContent = '';
+
+  const payload = {
+    display_name: document.getElementById('pi-name').value.trim(),
+    email:        document.getElementById('pi-email').value.trim(),
+    job_title:    document.getElementById('pi-role').value.trim(),
+    location:     document.getElementById('pi-location').value.trim(),
+  };
+
+  /* Basic client-side email validation */
+  if (payload.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) {
+    hint.textContent = '✗ Invalid email address';
+    hint.style.color = 'var(--neon-red)';
+    return;
+  }
+
+  try {
+    await api('/profile/api', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+
+    const nameSource = payload.display_name || payload.email.split('@')[0] || '';
+    const initials   = getInitials(nameSource);
+
+    document.getElementById('hero-avatar').textContent = initials;
+    document.getElementById('hero-name').textContent   = payload.display_name || payload.email.split('@')[0] || '—';
+    document.getElementById('hero-email').textContent  = payload.email || '—';
+
+    const topbarAvatar = document.getElementById('avatar-btn');
+    if (topbarAvatar) topbarAvatar.textContent = initials;
+
+    hint.textContent = '✓ Saved';
+    hint.style.color = 'var(--neon-green)';
+    showToast('Profile saved successfully', 'success');
+  } catch (e) {
+    hint.textContent = `✗ ${e.message}`;
+    hint.style.color = 'var(--neon-red)';
+    showToast(e.message || 'Failed to save profile', 'error');
+  }
+
+  setTimeout(() => { hint.textContent = ''; }, 4000);
+}
+
+/* ─── Change password ─── */
+async function changePassword() {
+  const cur   = document.getElementById('cur-pw').value;
+  const nw    = document.getElementById('new-pw').value;
+  const conf  = document.getElementById('conf-pw').value;
+  const errEl = document.getElementById('pw-error');
+  const okEl  = document.getElementById('pw-success');
+  errEl.style.display = 'none';
+  okEl.style.display  = 'none';
+
+  if (!cur || !nw || !conf) {
+    errEl.textContent = 'Please fill in all three fields.';
+    errEl.style.display = 'block'; return;
+  }
+  if (nw !== conf) {
+    errEl.textContent = 'New passwords do not match.';
+    errEl.style.display = 'block'; return;
+  }
+  if (nw.length < 6) {
+    errEl.textContent = 'New password must be at least 6 characters.';
+    errEl.style.display = 'block'; return;
+  }
+
+  try {
+    await api('/settings/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: cur, new_password: nw })
+    });
+    okEl.textContent = '✓ Password updated successfully.';
+    okEl.style.display = 'block';
+    document.getElementById('cur-pw').value  = '';
+    document.getElementById('new-pw').value  = '';
+    document.getElementById('conf-pw').value = '';
+    document.getElementById('pw-strength-wrap').style.display = 'none';
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed to update password.';
+    errEl.style.display = 'block';
+  }
+}
+
+/* ─── Init: wait for DOM, then fetch from backend ─── */  // ← FIXED: was bare calls at bottom
+document.addEventListener('DOMContentLoaded', () => {
+  loadProfile();
+  loadStats();
+});
+</script>
+{% endblock %}
