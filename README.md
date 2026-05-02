@@ -80,8 +80,7 @@ pip install -r requirements.txt
 # run app
 python app.py
 
-🔐 Environment Variables
-
+## .env file  
 SECRET_KEY=your_secret_key
 TWILIO_ACCOUNT_SID=your_sid
 TWILIO_AUTH_TOKEN=your_token
@@ -110,11 +109,5 @@ Reminders
 POST /reminders/add
 GET /reminders/list
 
-💡 Future Improvements
-Advanced AI job matching
-Email notifications
-Cloud deployment (AWS / Render)
-Multi-user support
 
-Create .env file:
-## 📁 Project Structure
+
