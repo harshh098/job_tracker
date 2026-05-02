@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🎯 JobTracker AI — Production-Ready Job Application Dashboard
 
 A full-stack AI-powered job tracking dashboard with glassmorphism UI.
@@ -179,3 +180,6 @@ Werkzeug==3.0.4
 | **RapidAPI / JSearch** | https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch → Subscribe (free tier available) |
 
 > Both services have **free tiers**. The app runs in demo mode without keys.
+=======
+# job_tracker
+>>>>>>> 64e0d0c917d3297f6b04d5a4b8ef7c20e7c5c368
