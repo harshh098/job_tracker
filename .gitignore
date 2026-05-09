@@ -1,5 +1,7 @@
-job_tracker/ 
-__pycache__/ 
-*.db 
-.env 
-uploads/ 
+job_tracker/
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+.env
+uploads/

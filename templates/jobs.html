@@ -17,7 +17,7 @@
   <div class="scraper-form" id="scraper-form">
     <div class="form-group" style="margin:0">
       <label class="form-label">Job Role *</label>
-      <input class="form-input" id="s-role" placeholder="e.g. Python Developer" required/>
+      <input class="form-input" id="s-role" placeholder="e.g. Python Developer, aiml, sde" required/>
     </div>
     <div class="form-group" style="margin:0">
       <label class="form-label">Location</label>
@@ -27,8 +27,8 @@
       <label class="form-label">Experience Level</label>
       <select class="form-input" id="s-exp">
         <option value="">Any level</option>
-        <option value="entry level">Entry Level</option>
-        <option value="mid level">Mid Level</option>
+        <option value="entry">Entry Level</option>
+        <option value="mid">Mid Level</option>
         <option value="senior">Senior</option>
         <option value="lead">Lead / Principal</option>
       </select>
@@ -94,7 +94,6 @@
 {% block scripts %}
 <script>
 // ── Cache for raw job objects — keyed by index.
-//    Populated on every render (fresh search OR restored from localStorage).
 const _jobsCache = {};
 
 // ── localStorage key for persisting scraper results across page reloads ──
@@ -104,14 +103,10 @@ function toggleManual() {
   document.getElementById('manual-form').classList.toggle('hidden');
 }
 
-// ── CHANGED: clears localStorage before fetching so stale results are never
-//    shown if the new search fails or returns empty. ──────────────────────────
 async function scrapeJobs() {
   const role = document.getElementById('s-role').value.trim();
   if (!role) { showToast('Please enter a job role', 'error'); return; }
 
-  // Clear persisted results before the new search so a reload mid-flight
-  // doesn't show the previous batch.
   localStorage.removeItem(SCRAPER_STORAGE_KEY);
 
   const btn = document.getElementById('scrape-btn');
@@ -120,26 +115,36 @@ async function scrapeJobs() {
   document.getElementById('results-area').innerHTML = `
     <div class="empty-state"><div class="spinner" style="margin:0 auto"></div><div class="empty-state-text mt-16">Fetching jobs…</div></div>`;
 
+  const experience = document.getElementById('s-exp').value;
+
   try {
     const data = await api('/jobs/scrape', {
       method: 'POST',
       body: JSON.stringify({
         role,
         location:   document.getElementById('s-location').value,
-        experience: document.getElementById('s-exp').value
+        experience,
       })
     });
 
-    // Persist to localStorage so results survive a page reload
-    // CHANGED: save happens here, after a successful API response only
+    // CHANGED: handle zero-results gracefully — show "No fresher jobs found"
+    if (!data.jobs || data.jobs.length === 0) {
+      document.getElementById('result-count').textContent = '';
+      document.getElementById('results-area').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📭</div>
+          <div class="empty-state-text">No fresher jobs found for "<strong>${escHtml(role)}</strong>".<br>Try a different role, location, or broaden the experience level.</div>
+        </div>`;
+      showToast('No fresher jobs found. Try a different search.', 'info');
+      return;
+    }
+
     try {
       localStorage.setItem(SCRAPER_STORAGE_KEY, JSON.stringify({
         jobs:  data.jobs,
-        found: data.found
+        found: data.found,
       }));
     } catch (storageErr) {
-      // localStorage quota exceeded or unavailable — silently ignore,
-      // results are still shown in-memory for the current session
       console.warn('[scrapeJobs] Could not persist results:', storageErr);
     }
 
@@ -149,9 +154,11 @@ async function scrapeJobs() {
     showToast(`Found ${data.found} jobs — click Interested to track them`, 'info');
   } catch(e) {
     console.error('[scrapeJobs] error:', e);
-    showToast(e.message, 'error');
+    // CHANGED: show user-friendly error — backend now returns clean messages
+    const msg = e.message || 'Something went wrong. Please try again.';
+    showToast(msg, 'error');
     document.getElementById('results-area').innerHTML = `
-      <div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">${e.message}</div></div>`;
+      <div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">${escHtml(msg)}</div></div>`;
   } finally {
     btn.disabled = false;
     btn.innerHTML = '🔍 Search';
@@ -161,11 +168,10 @@ async function scrapeJobs() {
 function renderResults(jobs) {
   const el = document.getElementById('results-area');
   if (!jobs || !jobs.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No jobs found</div></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No fresher jobs found</div></div>`;
     return;
   }
 
-  // Cache every job object by index
   jobs.forEach((j, idx) => { _jobsCache[idx] = j; });
 
   el.innerHTML = jobs.map((j, idx) => `
@@ -196,8 +202,6 @@ function renderResults(jobs) {
   `).join('');
 }
 
-// ── CHANGED: on page load, restore previously fetched results from
-//    localStorage so the user doesn't lose their search on reload ─────────────
 document.addEventListener('DOMContentLoaded', () => {
   try {
     const stored = localStorage.getItem(SCRAPER_STORAGE_KEY);
@@ -210,12 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   } catch (e) {
-    // Corrupted storage entry — remove it and start clean
     console.warn('[scraper] Could not restore results from localStorage:', e);
     localStorage.removeItem(SCRAPER_STORAGE_KEY);
   }
 });
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function markInterested(idx) {
   const job = _jobsCache[idx];
@@ -231,8 +233,6 @@ async function markInterested(idx) {
   btn.disabled = true;
   btn.innerHTML = '⏳ Saving…';
 
-  console.log('[markInterested] Saving job:', job.title, '@', job.company);
-
   try {
     const res = await api('/jobs/save', {
       method: 'POST',
@@ -242,11 +242,9 @@ async function markInterested(idx) {
         location:    job.location    || '',
         description: job.description || '',
         url:         job.url         || '',
-        source:      job.source      || 'jsearch'
+        source:      job.source      || 'jsearch',
       })
     });
-
-    console.log('[markInterested] Response:', res);
 
     if (res.duplicate) {
       showToast('Already in your tracker', 'info', 2000);
@@ -285,7 +283,7 @@ async function addManual() {
         company,
         location:    document.getElementById('m-location').value,
         url:         document.getElementById('m-url').value,
-        description: document.getElementById('m-desc').value
+        description: document.getElementById('m-desc').value,
       })
     });
     showToast('Job added to tracker!', 'success');
