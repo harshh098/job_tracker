@@ -3,6 +3,10 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE,
     password_hash TEXT,
     phone TEXT UNIQUE,
+    display_name TEXT,
+    job_title TEXT,
+    location TEXT,
+    last_login DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -17,6 +17,25 @@ def get_db():
 
 def init_db():
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
+
     with get_db() as conn:
         with open(schema_path, "r") as f:
             conn.executescript(f.read())
+
+        columns = [row[1] for row in conn.execute(
+            "PRAGMA table_info(users)"
+        ).fetchall()]
+
+        if "display_name" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+
+        if "job_title" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN job_title TEXT")
+
+        if "location" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN location TEXT")
+
+        if "last_login" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN last_login DATETIME")
+
+        conn.commit()
