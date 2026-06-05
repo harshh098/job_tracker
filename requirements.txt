@@ -9,3 +9,4 @@ Werkzeug==3.0.4
 httpx==0.27.2
 twilio
 pymupdf
+gunicorn
