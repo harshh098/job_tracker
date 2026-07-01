@@ -10,24 +10,33 @@ from routes.auth_utils import login_required
 resume_bp = Blueprint("resume", __name__)
 ALLOWED_EXTENSIONS = {"pdf", "docx", "txt"}
 
-# ---------------------------------------------------------------------------
-# Section header keywords used for section-aware parsing
-# ---------------------------------------------------------------------------
-EXPERIENCE_SECTION_HEADERS = {
+JOB_SECTION_HEADERS = {
     "experience", "work experience", "professional experience",
-    "internship", "internships", "research", "research experience",
-    "projects", "project", "work history", "employment", "employment history",
-    "relevant experience", "industry experience", "academic projects",
+    "internship", "internships", "work history", "employment",
+    "employment history", "relevant experience", "industry experience",
 }
+
+PROJECT_SECTION_HEADERS = {
+    "projects", "project", "academic projects", "personal projects",
+    "key projects", "notable projects",
+}
+
+RESEARCH_SECTION_HEADERS = {
+    "research", "research experience", "research & publications",
+    "research and publications", "publications",
+}
+
+EXPERIENCE_SECTION_HEADERS = (
+    JOB_SECTION_HEADERS | PROJECT_SECTION_HEADERS | RESEARCH_SECTION_HEADERS
+)
 
 STOP_SECTION_HEADERS = {
     "education", "skills", "technical skills", "certifications",
-    "awards", "achievements", "publications", "languages", "hobbies",
+    "awards", "achievements", "languages", "hobbies",
     "interests", "references", "volunteer", "extracurricular",
     "summary", "objective", "profile", "about",
 }
 
-# Headings to explicitly skip during name extraction
 NON_NAME_HEADINGS = {
     "resume", "curriculum vitae", "cv", "profile", "summary", "objective",
     "skills", "education", "experience", "projects", "contact", "references",
@@ -53,44 +62,32 @@ SKILL_KEYWORDS = [
     "agile", "scrum", "jira", "figma", "photoshop",
 ]
 
-# ---------------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------------
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def clean_text(text):
-    """Normalize unicode, remove PDF artifacts, and clean whitespace."""
-    # Normalize unicode (e.g. fancy dashes, ligatures)
     text = unicodedata.normalize("NFKD", text)
-    # Replace unicode dashes with hyphen
     text = re.sub(r"[\u2012\u2013\u2014\u2015\u2212]", "-", text)
-    # Remove broken URL fragments (e.g. http://..., www....)
     text = re.sub(r"https?://\S+", "", text)
     text = re.sub(r"www\.\S+", "", text)
-    # Remove non-printable characters except newlines and tabs
     text = re.sub(r"[^\x20-\x7E\n\t]", " ", text)
-    # Collapse repeated punctuation
     text = re.sub(r"\.{3,}", "...", text)
-    # Collapse excessive whitespace within lines
     text = re.sub(r"[ \t]{2,}", " ", text)
-    # Collapse more than 2 consecutive blank lines
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
 def is_likely_contact_line(line):
-    """Return True if line looks like a contact/meta line to be excluded."""
     patterns = [
-        r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",  # email
-        r"(\+?\d[\d\s\-().]{7,}\d)",                           # phone
+        r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
+        r"(\+?\d[\d\s\-().]{7,}\d)",
         r"linkedin\.com",
         r"github\.com",
         r"gitlab\.com",
         r"twitter\.com",
-        r"^\s*[\+\d\s\-().]{8,}\s*$",                         # pure phone line
+        r"^\s*[\+\d\s\-().]{8,}\s*$",
         r"^https?://",
         r"^www\.",
     ]
@@ -101,27 +98,29 @@ def is_likely_contact_line(line):
 
 
 def is_section_header(line):
-    """Check if a line is a known section header."""
     normalized = line.strip().lower().rstrip(":")
-    return normalized in EXPERIENCE_SECTION_HEADERS | STOP_SECTION_HEADERS
+    return (
+        normalized in JOB_SECTION_HEADERS
+        or normalized in PROJECT_SECTION_HEADERS
+        or normalized in RESEARCH_SECTION_HEADERS
+        or normalized in STOP_SECTION_HEADERS
+    )
 
 
 def get_section_type(line):
-    """Return 'experience', 'stop', or None."""
     normalized = line.strip().lower().rstrip(":")
-    if normalized in EXPERIENCE_SECTION_HEADERS:
-        return "experience"
+    if normalized in JOB_SECTION_HEADERS:
+        return "job"
+    if normalized in PROJECT_SECTION_HEADERS:
+        return "project"
+    if normalized in RESEARCH_SECTION_HEADERS:
+        return "research"
     if normalized in STOP_SECTION_HEADERS:
         return "stop"
     return None
 
 
-# ---------------------------------------------------------------------------
-# File text extraction
-# ---------------------------------------------------------------------------
-
 def extract_text_from_file(filepath):
-    """Extract raw text from PDF, DOCX, or TXT files."""
     ext = filepath.rsplit(".", 1)[1].lower()
 
     if ext == "txt":
@@ -133,16 +132,14 @@ def extract_text_from_file(filepath):
 
     elif ext == "pdf":
         try:
-            import fitz  # PyMuPDF
+            import fitz
             pages = []
             with fitz.open(filepath) as doc:
                 for page in doc:
-                    # Preserve layout with better text extraction flags
                     blocks = page.get_text("blocks", sort=True)
                     page_lines = []
                     for block in blocks:
-                        # block: (x0, y0, x1, y1, text, block_no, block_type)
-                        if block[6] == 0:  # text block
+                        if block[6] == 0:
                             block_text = block[4].strip()
                             if block_text:
                                 page_lines.append(block_text)
@@ -165,13 +162,7 @@ def extract_text_from_file(filepath):
     return ""
 
 
-# ---------------------------------------------------------------------------
-# Field extractors
-# ---------------------------------------------------------------------------
-
 def extract_email(text):
-    """Robust email extraction that avoids merged/corrupted PDF text."""
-    # Stricter pattern to avoid grabbing garbage around email
     match = re.search(
         r"(?<![a-zA-Z0-9._%+\-])"
         r"[a-zA-Z0-9._%+\-]{2,64}"
@@ -185,32 +176,23 @@ def extract_email(text):
 
 
 def extract_phone(text):
-    """Extract Indian or international phone numbers and normalize format."""
-    # Indian: +91, 91, or 10-digit starting with 6-9
-    # International: various formats
     patterns = [
-        r"\+91[\s\-]?\d{5}[\s\-]?\d{5}",              # +91 XXXXX XXXXX
-        r"\b91[\s\-]?\d{5}[\s\-]?\d{5}\b",            # 91 XXXXX XXXXX
-        r"\b[6-9]\d{4}[\s\-]?\d{5}\b",                # 10-digit Indian mobile
-        r"\+\d{1,3}[\s\-]?\(?\d{2,4}\)?[\s\-]?\d{3,5}[\s\-]?\d{4,6}",  # International
-        r"\(?\d{3}\)?[\s\-]\d{3}[\s\-]\d{4}",         # US format
+        r"\+91[\s\-]?\d{5}[\s\-]?\d{5}",
+        r"\b91[\s\-]?\d{5}[\s\-]?\d{5}\b",
+        r"\b[6-9]\d{4}[\s\-]?\d{5}\b",
+        r"\+\d{1,3}[\s\-]?\(?\d{2,4}\)?[\s\-]?\d{3,5}[\s\-]?\d{4,6}",
+        r"\(?\d{3}\)?[\s\-]\d{3}[\s\-]\d{4}",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
             raw = match.group().strip()
-            # Normalize: collapse inner spaces/dashes for cleanliness
             normalized = re.sub(r"[\s\-]+", "-", raw)
             return normalized
     return ""
 
 
 def extract_name(lines):
-    """
-    Detect the candidate's name from the first meaningful lines.
-    Skips: section headings, emails, URLs, single words, lines >60 chars.
-    Expects 2–3 word proper-noun-style tokens.
-    """
     name_re = re.compile(r"^[A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,2}$")
     for line in lines[:15]:
         line = line.strip()
@@ -224,23 +206,16 @@ def extract_name(lines):
             continue
         if re.search(r"\d", line):
             continue
-        # Must look like "Firstname Lastname" or "Firstname Middle Lastname"
         if name_re.match(line):
             return line
     return ""
 
 
 def extract_skills(text):
-    """
-    Keyword-based skill detection.
-    - Uses word-boundary matching to avoid partial hits (e.g. 'go' inside 'google').
-    - Deduplicates while preserving order.
-    """
     text_lower = text.lower()
     seen = set()
     skills = []
     for skill in SKILL_KEYWORDS:
-        # Use word boundaries; handle multi-word skills too
         pattern = r"\b" + re.escape(skill) + r"\b"
         if re.search(pattern, text_lower):
             if skill not in seen:
@@ -249,99 +224,315 @@ def extract_skills(text):
     return skills
 
 
-# ---------------------------------------------------------------------------
-# Section-aware experience extraction
-# ---------------------------------------------------------------------------
+_MONTH = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
+_DATE_TOKEN = rf"(?:{_MONTH}\s+\d{{4}}|\d{{4}})"
+_END_TOKEN = rf"(?:Present|Current|Now|{_DATE_TOKEN})"
+
+DATE_PATTERN = re.compile(
+    rf"{_DATE_TOKEN}\s*[-–—]\s*{_END_TOKEN}",
+    re.IGNORECASE,
+)
+
+TITLE_KEYWORDS = (
+    "intern", "internship", "developer", "engineer", "scientist", "analyst",
+    "research", "researcher", "manager", "consultant", "architect",
+    "specialist", "coordinator", "administrator", "designer", "lead",
+    "associate", "trainee", "assistant",
+)
+
+_TITLE_KEYWORDS_SORTED = sorted(TITLE_KEYWORDS, key=len, reverse=True)
+TITLE_KEYWORD_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in _TITLE_KEYWORDS_SORTED) + r")\b",
+    re.IGNORECASE,
+)
+
+BULLET_PREFIX_RE = re.compile(r"^[•\-\*▪‣●○·»]\s+")
+
+COMPANY_HINT_RE = re.compile(
+    r"\b(Inc|Ltd|LLC|LLP|Pvt|Corp|Corporation|Technologies|Tech|Solutions|"
+    r"Systems|Labs|Studio|Group|Company|Co\.|Consulting|Software|Global|"
+    r"Industries|Enterprises|AI|Analytics)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_bullet_line(line):
+    return bool(BULLET_PREFIX_RE.match(line))
+
+
+def _is_skill_list_line(line):
+    if line.count(",") >= 2:
+        return True
+    lower = line.lower()
+    hits = sum(1 for s in SKILL_KEYWORDS if re.search(r"\b" + re.escape(s) + r"\b", lower))
+    return hits >= 2
+
+
+def _is_description_line(line):
+    word_count = len(line.split())
+    if word_count > 12:
+        return True
+    if line.endswith(".") and word_count > 6:
+        return True
+    return False
+
+
+def _is_noise_line(line):
+    return (
+        _is_bullet_line(line)
+        or is_likely_contact_line(line)
+        or _is_skill_list_line(line)
+        or _is_description_line(line)
+    )
+
+
+def _split_merged_entry(line):
+    date_match = DATE_PATTERN.search(line)
+    if not date_match:
+        return None
+
+    duration = date_match.group().strip()
+    before = line[: date_match.start()].strip(" -|,")
+
+    if not before:
+        return None
+
+    if "|" in before:
+        parts = [p.strip() for p in before.split("|", 1)]
+        title = parts[0]
+        company = parts[1] if len(parts) > 1 else ""
+        return title, company, duration
+
+    company_hint = COMPANY_HINT_RE.search(before)
+    title_kw = TITLE_KEYWORD_RE.search(before)
+
+    if title_kw:
+        after_kw = before[title_kw.end():].strip(" -,")
+        title_part = before[: title_kw.end()].strip(" -,")
+        if after_kw:
+            return title_part, after_kw, duration
+        return before, "", duration
+
+    if company_hint:
+        split_idx = before.rfind(" ", 0, company_hint.start())
+        if split_idx > 0:
+            title_part = before[:split_idx].strip()
+            company_part = before[split_idx:].strip()
+            if title_part:
+                return title_part, company_part, duration
+
+    return before, "", duration
+
+
+def _looks_like_entry_title(line):
+    if _is_noise_line(line):
+        return False
+    if DATE_PATTERN.search(line):
+        return False
+    return bool(TITLE_KEYWORD_RE.search(line))
+
+
+_VENUE_LINE_RE = re.compile(
+    r"^(published|journal|conference|venue|doi|isbn|proceedings)\s*[:\-]",
+    re.IGNORECASE,
+)
+_VENUE_SHORT_RE = re.compile(r"^[A-Z][A-Za-z&.\-]{1,24}(\s+\d{4})?$")
+
+
+def _is_venue_line(line):
+    """
+    True if the line is publication/venue metadata belonging to the entry
+    directly above it (e.g. "Published: IJCRT", "ICICT 2026") rather than
+    a new project/research title or a plain description fragment.
+    """
+    stripped = line.strip()
+    if _VENUE_LINE_RE.match(stripped):
+        return True
+    if len(stripped.split()) <= 3 and _VENUE_SHORT_RE.match(stripped):
+        return True
+    return False
+
+
+def _looks_like_project_title(line):
+    """
+    True if a standalone line plausibly starts a NEW project/research entry
+    (a project name / paper title), as opposed to being a continuation
+    fragment of the entry above it.
+
+    Real headings are short noun-phrase lines that do NOT end in sentence
+    punctuation and do NOT start with a lowercase letter — bullet-wrapped
+    description fragments like "tool calling.", "UPI, and financial
+    literacy queries.", or "outperforming standalone baselines by over 4%."
+    fail one of those checks and are correctly rejected, so they fold into
+    the previous entry instead of becoming their own card.
+    """
+    if _is_noise_line(line):
+        return False
+    if DATE_PATTERN.search(line):
+        return False
+    if _is_venue_line(line):
+        return False
+
+    stripped = line.strip()
+    word_count = len(stripped.split())
+    if word_count == 0 or word_count > 14:
+        return False
+
+    if stripped.endswith(('.', ',', ';')):
+        return False
+
+    if stripped[0].islower():
+        return False
+
+    return True
+
+
+def _collect_entry(lines, i, n, category="job"):
+    line = lines[i]
+
+    merged = _split_merged_entry(line)
+    if merged:
+        title, company, duration = merged
+        return {"title": title, "company": company, "duration": duration}, i + 1
+
+    if "|" in line:
+        parts = [p.strip() for p in line.split("|", 1)]
+        title = parts[0]
+        company = parts[1] if len(parts) > 1 else ""
+        duration = ""
+        j = i + 1
+        if j < n and DATE_PATTERN.search(lines[j]):
+            duration = lines[j]
+            j += 1
+        return {"title": title, "company": company, "duration": duration}, j
+
+    title = line
+    company = ""
+    duration = ""
+    j = i + 1
+
+    if category == "job":
+        if j < n and not DATE_PATTERN.search(lines[j]) and not _is_noise_line(lines[j]):
+            company = lines[j]
+            j += 1
+
+        for k in range(j, min(j + 2, n)):
+            if DATE_PATTERN.search(lines[k]):
+                duration = lines[k]
+                j = k + 1
+                break
+    else:
+        # Projects / Research: keep each card to just a title, plus a
+        # venue/duration line if one directly follows (e.g. "Published:
+        # IJCRT", "ICICT 2026", or a date range). Skip over any wrapped
+        # description lines belonging to this same entry — absorb and
+        # discard them instead of turning them into separate cards.
+        while j < n:
+            nxt = lines[j]
+            if DATE_PATTERN.search(nxt):
+                duration = nxt
+                j += 1
+                break
+            if _is_venue_line(nxt) and not duration:
+                duration = nxt
+                j += 1
+                break
+            if _looks_like_project_title(nxt) or is_section_header(nxt):
+                break
+            j += 1
+
+    return {"title": title, "company": company, "duration": duration}, j
+
+
+def _extract_entries_from_lines(lines, category, restrict_to_section=True):
+    entries = []
+    n = len(lines)
+    in_section = not restrict_to_section
+    i = 0
+
+    is_title_fn = _looks_like_entry_title if category == "job" else _looks_like_project_title
+
+    while i < n:
+        line = lines[i]
+
+        if restrict_to_section:
+            section = get_section_type(line)
+            if section == category:
+                in_section = True
+                i += 1
+                continue
+            if section is not None and section != category:
+                if in_section:
+                    break
+                i += 1
+                continue
+            if not in_section:
+                i += 1
+                continue
+        else:
+            if is_section_header(line):
+                i += 1
+                continue
+
+        if category == "job" and _is_noise_line(line):
+            i += 1
+            continue
+
+        if category != "job" and not is_title_fn(line):
+            i += 1
+            continue
+
+        if DATE_PATTERN.search(line) and category == "job" and not TITLE_KEYWORD_RE.search(line):
+            i += 1
+            continue
+
+        if is_title_fn(line) or (category == "job" and _split_merged_entry(line)):
+            entry, next_i = _collect_entry(lines, i, n, category=category)
+            if entry["title"]:
+                entries.append(entry)
+            i = next_i
+            continue
+
+        i += 1
+
+    return entries
+
+
+def extract_experience(text):
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    has_job_header = any(get_section_type(l) == "job" for l in lines)
+
+    if has_job_header:
+        entries = _extract_entries_from_lines(lines, "job", restrict_to_section=True)
+        if entries:
+            return entries
+
+    return _extract_entries_from_lines(lines, "job", restrict_to_section=False)
+
+
+def extract_projects(text):
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    if not any(get_section_type(l) == "project" for l in lines):
+        return []
+    return _extract_entries_from_lines(lines, "project", restrict_to_section=True)
+
+
+def extract_research(text):
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    if not any(get_section_type(l) == "research" for l in lines):
+        return []
+    return _extract_entries_from_lines(lines, "research", restrict_to_section=True)
+
 
 def extract_experience_highlights(text):
-    """
-    Section-aware, line-by-line experience extraction.
+    return extract_experience(text)
 
-    Strategy:
-    1. Walk lines and track which section we are in.
-    2. Only collect lines from experience-type sections.
-    3. Filter out contact info, URLs, and noise.
-    4. Score remaining lines for relevance using keyword signals.
-    5. Return top-6 cleaned highlights.
-    """
-    lines = text.split("\n")
-    in_experience_section = False
-    collected = []
-
-    year_pattern = re.compile(r"\b(19|20)\d{2}\b")
-    bullet_prefix = re.compile(r"^[\-\u2022\u25cf\*\>]\s+")
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-
-        # Detect section transitions
-        section_type = get_section_type(stripped)
-        if section_type == "experience":
-            in_experience_section = True
-            continue
-        if section_type == "stop":
-            in_experience_section = False
-            continue
-
-        if not in_experience_section:
-            continue
-
-        # Skip contact/meta lines
-        if is_likely_contact_line(stripped):
-            continue
-
-        # Strip bullet characters
-        cleaned = bullet_prefix.sub("", stripped).strip()
-
-        if len(cleaned) < 15 or len(cleaned) > 200:
-            continue
-
-        # Must contain at least one experience keyword OR a year
-        line_lower = cleaned.lower()
-        has_keyword = any(kw in line_lower for kw in EXPERIENCE_LINE_KEYWORDS)
-        has_year = bool(year_pattern.search(cleaned))
-
-        if has_keyword or has_year:
-            collected.append(cleaned)
-
-    # Fallback: if section detection found nothing, scan whole doc for
-    # lines that strongly match experience signals + contain a year
-    if not collected:
-        for line in lines:
-            stripped = line.strip()
-            if not stripped or is_likely_contact_line(stripped):
-                continue
-            if len(stripped) < 15 or len(stripped) > 200:
-                continue
-            line_lower = stripped.lower()
-            has_keyword = any(kw in line_lower for kw in EXPERIENCE_LINE_KEYWORDS)
-            has_year = bool(year_pattern.search(stripped))
-            if has_keyword and has_year:
-                collected.append(stripped)
-
-    # Deduplicate while preserving order
-    seen = set()
-    unique = []
-    for item in collected:
-        key = item.lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-
-    return unique[:6]
-
-
-# ---------------------------------------------------------------------------
-# Main parse orchestrator
-# ---------------------------------------------------------------------------
 
 def parse_resume_text(text):
-    """
-    Orchestrate all extraction steps on cleaned resume text.
-    Returns a dict with: name, email, phone, skills, experience.
-    """
     text = clean_text(text)
     lines = [l for l in text.split("\n") if l.strip()]
 
@@ -349,7 +540,9 @@ def parse_resume_text(text):
     email = extract_email(text)
     phone = extract_phone(text)
     skills = extract_skills(text)
-    experience = extract_experience_highlights(text)
+    experience = extract_experience(text)
+    projects = extract_projects(text)
+    research = extract_research(text)
 
     return {
         "name": name,
@@ -357,12 +550,10 @@ def parse_resume_text(text):
         "phone": phone,
         "skills": skills,
         "experience": experience,
+        "projects": projects,
+        "research": research,
     }
 
-
-# ---------------------------------------------------------------------------
-# Routes (unchanged API surface)
-# ---------------------------------------------------------------------------
 
 @resume_bp.route("/")
 @login_required
