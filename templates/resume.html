@@ -38,7 +38,7 @@
         <div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;font-size:13px;display:flex;align-items:center;gap:10px;">
           <span>📎</span>
           <span id="selected-filename" style="color:var(--text-secondary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-          <button class="btn btn-primary btn-sm" onclick="uploadResume()">Parse ✨</button>
+          <button class="btn btn-primary btn-sm" id="parse-btn" onclick="uploadResume()">Parse ✨</button>
         </div>
       </div>
     </div>
@@ -108,9 +108,25 @@
         </div>
 
         <!-- Experience -->
-        <div>
+        <div class="mb-20">
           <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Experience Highlights</div>
           <div id="p-experience"></div>
+        </div>
+
+        <!-- CHANGED: Projects section — separate from Experience.
+             Hidden entirely (wrapper + heading) when there are no projects. -->
+        <div class="mb-20 hidden" id="p-projects-section">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Projects</div>
+          <div id="p-projects"></div>
+        </div>
+
+        <!-- CHANGED: Research section — separate from Experience.
+             Hidden entirely (wrapper + heading) when there is no research
+             section in the resume, per requirement: don't show/force it
+             if it isn't actually present. -->
+        <div class="hidden" id="p-research-section">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Research & Publications</div>
+          <div id="p-research"></div>
         </div>
       </div>
     </div>
@@ -144,8 +160,20 @@ function setFile(file) {
 }
 
 async function uploadResume() {
-  if (!selectedFile) return;
+  if (!selectedFile) {
+    showToast('Please select a resume file first', 'error');
+    return;
+  }
+
   const statusEl = document.getElementById('upload-status');
+  const parseBtn = document.getElementById('parse-btn');
+
+  // Guard against double-submits by disabling the button and showing a
+  // "Parsing…" label while the request is in flight.
+  if (parseBtn.disabled) return; // already parsing, ignore extra clicks
+  const originalLabel = parseBtn.textContent;
+  parseBtn.disabled = true;
+  parseBtn.textContent = 'Parsing…';
   statusEl.classList.remove('hidden');
 
   const fd = new FormData();
@@ -154,15 +182,39 @@ async function uploadResume() {
   try {
     const res = await fetch('/resume/upload', { method: 'POST', body: fd });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+    if (!res.ok) throw new Error(data.error || 'Failed to parse resume');
     showParsed(data.parsed, data.filename);
     showToast('Resume parsed successfully!', 'success');
     await loadResumes();
   } catch (e) {
-    showToast(e.message, 'error');
+    showToast(e.message || 'Something went wrong while parsing', 'error');
   } finally {
     statusEl.classList.add('hidden');
+    parseBtn.disabled = false;
+    parseBtn.textContent = originalLabel;
   }
+}
+
+// CHANGED: renderEntryCards() is a small shared helper used by Experience,
+// Projects, and Research so all three sections render the same structured
+// card layout (title emphasized, company below, duration muted below that),
+// while also still supporting old plain-string entries for backward
+// compatibility.
+function renderEntryCards(entries) {
+  return entries.map(e => {
+    if (e && typeof e === 'object') {
+      const title = e.title || '';
+      const company = e.company || '';
+      const duration = e.duration || '';
+      return `<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;line-height:1.5">
+        ${title ? `<div style="font-size:13px;font-weight:600;color:var(--text-primary)">${title}</div>` : ''}
+        ${company ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${company}</div>` : ''}
+        ${duration ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${duration}</div>` : ''}
+      </div>`;
+    }
+    // Old plain-string format — rendered exactly as before
+    return `<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;line-height:1.5">${e}</div>`;
+  }).join('');
 }
 
 function showParsed(p, filename) {
@@ -182,14 +234,37 @@ function showParsed(p, filename) {
     skillsEl.innerHTML = '<span style="color:var(--text-muted);font-size:13px">No skills detected</span>';
   }
 
-  // Experience
+  // Experience (jobs only — projects/research now render separately below)
   const expEl = document.getElementById('p-experience');
-  if (p.experience.length) {
-    expEl.innerHTML = p.experience.map(e =>
-      `<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;line-height:1.5">${e}</div>`
-    ).join('');
+  if (p.experience && p.experience.length) {
+    expEl.innerHTML = renderEntryCards(p.experience);
   } else {
     expEl.innerHTML = '<span style="color:var(--text-muted);font-size:13px">No experience entries detected</span>';
+  }
+
+  // CHANGED: Projects — separate section, only shown if projects exist.
+  const projectsSection = document.getElementById('p-projects-section');
+  const projectsEl = document.getElementById('p-projects');
+  const projects = p.projects || [];
+  if (projects.length) {
+    projectsEl.innerHTML = renderEntryCards(projects);
+    projectsSection.classList.remove('hidden');
+  } else {
+    projectsEl.innerHTML = '';
+    projectsSection.classList.add('hidden');
+  }
+
+  // CHANGED: Research — separate section, only shown if the resume actually
+  // has a research section. Never shown/forced when absent.
+  const researchSection = document.getElementById('p-research-section');
+  const researchEl = document.getElementById('p-research');
+  const research = p.research || [];
+  if (research.length) {
+    researchEl.innerHTML = renderEntryCards(research);
+    researchSection.classList.remove('hidden');
+  } else {
+    researchEl.innerHTML = '';
+    researchSection.classList.add('hidden');
   }
 
   // Save to session for AI page
@@ -215,6 +290,12 @@ function resetAll() {
   document.getElementById('parsed-content').classList.add('hidden');
   document.getElementById('parse-placeholder').classList.remove('hidden');
   document.getElementById('parse-filename').textContent = '';
+
+  // Also reset the Projects/Research sections back to hidden/empty
+  document.getElementById('p-projects-section').classList.add('hidden');
+  document.getElementById('p-projects').innerHTML = '';
+  document.getElementById('p-research-section').classList.add('hidden');
+  document.getElementById('p-research').innerHTML = '';
 
   // 3. Selected file
   selectedFile = null;
@@ -263,8 +344,13 @@ async function loadResumes() {
     return;
   }
 
+  // NOTE: /resume/list (DB-backed) only persists "experience" per the
+  // existing schema — projects/research aren't stored in the DB, so
+  // re-opening a saved resume from this list will show Experience only.
+  // Freshly parsed uploads (via uploadResume -> showParsed) will show all
+  // three, since those come straight from the parse response.
   el.innerHTML = resumes.map(r => `
-    <div style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick='showParsed(${JSON.stringify({name:r.name,email:r.email,phone:r.phone,skills:r.skills,experience:r.experience})}, "${r.original_name}")'>
+    <div style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick='showParsed(${JSON.stringify({name:r.name,email:r.email,phone:r.phone,skills:r.skills,experience:r.experience,projects:[],research:[]})}, "${r.original_name}")'>
       <div style="display:flex;align-items:center;gap:8px;">
         <span>📄</span>
         <div style="flex:1">
